@@ -1,0 +1,5 @@
+- [x] Add @main_page alias to root build configs (vite, tsconfig, tsconfig.app)
+- [x] Import main_page styles and include Tailwind scanning for main_page src
+- [x] Create layout/route to embed main_page pages with providers
+- [x] Update login/signup redirect to /main_page
+- [ ] Verify by running dev server
