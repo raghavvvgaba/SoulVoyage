@@ -2,10 +2,11 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ProfileMenu } from "@/components/ProfileMenu";
+import { ServerCreationDialog } from "@/components/ServerCreationDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { UserPlus, Users, Plus, Send, MessageSquare } from "lucide-react";
+import { UserPlus, Users, Plus, Send, MessageSquare, ChevronDown, UserCheck, Settings, Layers } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
@@ -14,6 +15,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 
@@ -49,6 +56,10 @@ const MainPage = () => {
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [showDirectMessages, setShowDirectMessages] = useState(true);
   const [showAddFriendDialog, setShowAddFriendDialog] = useState(false);
+  const [showServerCreationDialog, setShowServerCreationDialog] = useState(false);
+  const [expandedServers, setExpandedServers] = useState<Set<string>>(
+    new Set(["1", "2"])
+  );
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [profileTag, setProfileTag] = useState("");
   const [friends, setFriends] = useState<Friend[]>([
@@ -61,22 +72,21 @@ const MainPage = () => {
     { id: "req2", name: "Jordan Smith" },
   ]);
 
-  const [servers] = useState<Server[]>([
+  const [servers, setServers] = useState<Server[]>([
     { 
       id: "1", 
       name: "Travel Enthusiasts",
+      icon: undefined,
       channels: [
         { id: "1", name: "general" },
-        { id: "2", name: "destinations" },
-        { id: "3", name: "tips-and-tricks" },
       ]
     },
     { 
       id: "2", 
       name: "Adventure Club",
+      icon: undefined,
       channels: [
         { id: "1", name: "general" },
-        { id: "2", name: "events" },
       ]
     },
   ]);
@@ -86,6 +96,31 @@ const MainPage = () => {
     setShowDirectMessages(false);
     setSelectedChannel(servers.find(s => s.id === serverId)?.channels?.[0]?.id || null);
   };
+
+  const handleCreateServer = (serverData: { name: string; icon?: string }) => {
+    const newServer: Server = {
+      id: Date.now().toString(),
+      name: serverData.name,
+      icon: serverData.icon,
+      channels: [{ id: "general_1", name: "general" }],
+    };
+
+    setServers([...servers, newServer]);
+    setExpandedServers(new Set([...expandedServers, newServer.id]));
+    handleServerClick(newServer.id);
+  };
+
+  const toggleChannelsExpanded = (serverId: string) => {
+    const newExpandedServers = new Set(expandedServers);
+    if (newExpandedServers.has(serverId)) {
+      newExpandedServers.delete(serverId);
+    } else {
+      newExpandedServers.add(serverId);
+    }
+    setExpandedServers(newExpandedServers);
+  };
+
+  const isChannelsExpanded = selectedServer ? expandedServers.has(selectedServer) : false;
 
   const handleChannelClick = (channelId: string) => {
     setSelectedChannel(channelId);
@@ -194,15 +229,24 @@ const MainPage = () => {
             variant="ghost"
             size="icon"
             onClick={() => handleServerClick(server.id)}
-            className={`w-12 h-12 rounded-2xl transition-all ${
+            className={`w-12 h-12 rounded-2xl transition-all p-0 ${
               selectedServer === server.id
                 ? "bg-primary text-primary-foreground rounded-xl"
                 : "bg-card hover:bg-accent hover:rounded-xl"
             }`}
           >
-            <span className="text-sm font-semibold">
-              {getInitials(server.name)}
-            </span>
+            {server.icon ? (
+              <Avatar className="w-full h-full">
+                <AvatarImage src={server.icon} />
+                <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold rounded-2xl">
+                  {getInitials(server.name)}
+                </AvatarFallback>
+              </Avatar>
+            ) : (
+              <span className="text-sm font-semibold">
+                {getInitials(server.name)}
+              </span>
+            )}
           </Button>
         ))}
 
@@ -210,6 +254,7 @@ const MainPage = () => {
         <Button
           variant="ghost"
           size="icon"
+          onClick={() => setShowServerCreationDialog(true)}
           className="w-12 h-12 rounded-2xl bg-card hover:bg-accent hover:rounded-xl transition-all"
         >
           <Plus className="h-6 w-6 text-primary" />
@@ -223,16 +268,37 @@ const MainPage = () => {
           {showDirectMessages ? (
             <h2 className="text-lg font-semibold">Direct Messages</h2>
           ) : (
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold">{currentServer?.name}</h2>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={() => setShowDirectMessages(true)}
-              >
-                ✕
-              </Button>
+            <div className="flex items-center gap-2 flex-1">
+              <h2 className="text-lg font-semibold flex-1">{currentServer?.name}</h2>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 ml-auto"
+                  >
+                    <ChevronDown className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem className="gap-2 cursor-pointer">
+                    <UserCheck className="h-4 w-4" />
+                    <span>Invite People</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="gap-2 cursor-pointer">
+                    <Settings className="h-4 w-4" />
+                    <span>Server Settings</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="gap-2 cursor-pointer">
+                    <Plus className="h-4 w-4" />
+                    <span>Create Channel</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="gap-2 cursor-pointer">
+                    <Layers className="h-4 w-4" />
+                    <span>Create Category</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           )}
         </div>
@@ -256,18 +322,11 @@ const MainPage = () => {
               >
                 <Users className="h-4 w-4" />
                 Friends
-                <div className="ml-auto flex items-center gap-1">
-                  {friendRequests.length > 0 && (
-                    <span className="bg-primary text-primary-foreground text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                      {friendRequests.length}
-                    </span>
-                  )}
-                  {friends.length > 0 && (
-                    <span className="text-xs text-muted-foreground">
-                      {friends.length}
-                    </span>
-                  )}
-                </div>
+                {friendRequests.length > 0 && (
+                  <span className="ml-auto bg-primary text-primary-foreground text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                    {friendRequests.length}
+                  </span>
+                )}
               </Button>
             </div>
 
@@ -303,7 +362,21 @@ const MainPage = () => {
             {/* Text Channels Section */}
             <div className="p-2 border-b border-border">
               <div className="flex items-center justify-between px-2 py-1">
-                <span className="text-xs font-semibold text-muted-foreground">TEXT CHANNELS</span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5 p-0"
+                    onClick={() => selectedServer && toggleChannelsExpanded(selectedServer)}
+                  >
+                    <ChevronDown
+                      className={`h-4 w-4 transition-transform ${
+                        isChannelsExpanded ? "rotate-0" : "-rotate-90"
+                      }`}
+                    />
+                  </Button>
+                  <span className="text-xs font-semibold text-muted-foreground">TEXT CHANNELS</span>
+                </div>
                 <Button variant="ghost" size="icon" className="h-5 w-5">
                   <Plus className="h-3 w-3" />
                 </Button>
@@ -311,22 +384,24 @@ const MainPage = () => {
             </div>
 
             {/* Channels List */}
-            <div className="flex-1 overflow-y-auto p-2">
-              {currentServer?.channels?.map((channel) => (
-                <Button
-                  key={channel.id}
-                  variant="ghost"
-                  onClick={() => handleChannelClick(channel.id)}
-                  className={`w-full justify-start gap-3 mb-1 ${
-                    selectedChannel === channel.id
-                      ? "bg-accent/50 hover:bg-accent/50"
-                      : "hover:bg-accent/50"
-                  }`}
-                >
-                  <span className="text-sm"># {channel.name}</span>
-                </Button>
-              ))}
-            </div>
+            {isChannelsExpanded && (
+              <div className="flex-1 overflow-y-auto p-2">
+                {currentServer?.channels?.map((channel) => (
+                  <Button
+                    key={channel.id}
+                    variant="ghost"
+                    onClick={() => handleChannelClick(channel.id)}
+                    className={`w-full justify-start gap-3 mb-1 ${
+                      selectedChannel === channel.id
+                        ? "bg-accent/50 hover:bg-accent/50"
+                        : "hover:bg-accent/50"
+                    }`}
+                  >
+                    <span className="text-sm"># {channel.name}</span>
+                  </Button>
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -382,37 +457,37 @@ const MainPage = () => {
         </div>
 
         {/* Message Input */}
-        <div className="p-4 border-t border-border bg-card/30 backdrop-blur-sm">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-full"
-              disabled={!selectedFriend && showDirectMessages}
-            >
-              <Plus className="h-5 w-5" />
-            </Button>
-            <div className="flex-1 relative">
-              <Input
-                placeholder={selectedFriend ? `Message ${selectedFriend.name}...` : "Select a DM to start messaging"}
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                onKeyPress={handleKeyPress}
-                disabled={!selectedFriend && showDirectMessages}
-                className="pr-10"
-              />
+        {((showDirectMessages && selectedFriend) || (!showDirectMessages && selectedChannel)) && (
+          <div className="p-4 border-t border-border bg-card/30 backdrop-blur-sm">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="rounded-full"
+              >
+                <Plus className="h-5 w-5" />
+              </Button>
+              <div className="flex-1 relative">
+                <Input
+                  placeholder={showDirectMessages ? `Message ${selectedFriend?.name}...` : `Message in #${currentChannel?.name}`}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  className="pr-10"
+                />
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="rounded-full"
+                onClick={handleSendMessage}
+                disabled={!message.trim()}
+              >
+                <Send className="h-5 w-5" />
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-full"
-              onClick={handleSendMessage}
-              disabled={!message.trim() || (!selectedFriend && showDirectMessages)}
-            >
-              <Send className="h-5 w-5" />
-            </Button>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Add Friend Dialog */}
@@ -451,6 +526,13 @@ const MainPage = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Server Creation Dialog */}
+      <ServerCreationDialog
+        open={showServerCreationDialog}
+        onOpenChange={setShowServerCreationDialog}
+        onServerCreate={handleCreateServer}
+      />
     </div>
   );
 };
