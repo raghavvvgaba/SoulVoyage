@@ -1,12 +1,12 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ProfileMenu } from "@/components/ProfileMenu";
 import { ServerCreationDialog } from "@/components/ServerCreationDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { UserPlus, Users, Plus, Send, MessageSquare, ChevronDown, UserCheck, Settings, Layers } from "lucide-react";
+import { UserPlus, Users, Plus, Send, MessageSquare, ChevronDown, UserCheck, Settings, Layers, Copy } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
@@ -21,6 +21,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  RadioGroup,
+  RadioGroupItem,
+} from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 
@@ -46,10 +50,12 @@ interface Server {
 interface Channel {
   id: string;
   name: string;
+  type?: "text" | "voice";
 }
 
 const MainPage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const [message, setMessage] = useState("");
   const [selectedServer, setSelectedServer] = useState<string | null>(null);
@@ -60,6 +66,11 @@ const MainPage = () => {
   const [expandedServers, setExpandedServers] = useState<Set<string>>(
     new Set(["1", "2"])
   );
+  const [showCreateChannelDialog, setShowCreateChannelDialog] = useState(false);
+  const [channelType, setChannelType] = useState<"text" | "voice">("text");
+  const [channelName, setChannelName] = useState("");
+  const [channelError, setChannelError] = useState("");
+  const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [profileTag, setProfileTag] = useState("");
   const [friends, setFriends] = useState<Friend[]>([
@@ -72,13 +83,13 @@ const MainPage = () => {
     { id: "req2", name: "Jordan Smith" },
   ]);
 
-  const [servers, setServers] = useState<Server[]>([
+  const defaultServers: Server[] = [
     { 
       id: "1", 
       name: "Travel Enthusiasts",
       icon: undefined,
       channels: [
-        { id: "1", name: "general" },
+        { id: "1", name: "general", type: "text" },
       ]
     },
     { 
@@ -86,10 +97,25 @@ const MainPage = () => {
       name: "Adventure Club",
       icon: undefined,
       channels: [
-        { id: "1", name: "general" },
+        { id: "1", name: "general", type: "text" },
       ]
     },
-  ]);
+  ];
+
+  const [servers, setServers] = useState<Server[]>(() => {
+    const savedServers = localStorage.getItem("soulVoyageServers");
+    return savedServers ? JSON.parse(savedServers) : defaultServers;
+  });
+
+  useEffect(() => {
+    if (searchParams.get("settingsSaved") === "true") {
+      toast({
+        title: "Success",
+        description: "Server settings saved successfully",
+      });
+      window.history.replaceState({}, document.title, "/main");
+    }
+  }, [searchParams, toast]);
 
   const handleServerClick = (serverId: string) => {
     setSelectedServer(serverId);
@@ -102,10 +128,12 @@ const MainPage = () => {
       id: Date.now().toString(),
       name: serverData.name,
       icon: serverData.icon,
-      channels: [{ id: "general_1", name: "general" }],
+      channels: [{ id: "general_1", name: "general", type: "text" }],
     };
 
-    setServers([...servers, newServer]);
+    const updatedServers = [...servers, newServer];
+    setServers(updatedServers);
+    localStorage.setItem("soulVoyageServers", JSON.stringify(updatedServers));
     setExpandedServers(new Set([...expandedServers, newServer.id]));
     handleServerClick(newServer.id);
   };
@@ -122,12 +150,66 @@ const MainPage = () => {
 
   const isChannelsExpanded = selectedServer ? expandedServers.has(selectedServer) : false;
 
+  const handleCreateChannel = () => {
+    if (!channelName.trim()) {
+      setChannelError("Please enter a channel name");
+      return;
+    }
+
+    if (!selectedServer) return;
+
+    const newChannel: Channel = {
+      id: Date.now().toString(),
+      name: channelName.toLowerCase().replace(/\s+/g, "-"),
+      type: channelType,
+    };
+
+    const updatedServers = servers.map((server) =>
+      server.id === selectedServer
+        ? { ...server, channels: [...(server.channels || []), newChannel] }
+        : server
+    );
+
+    setServers(updatedServers);
+    localStorage.setItem("soulVoyageServers", JSON.stringify(updatedServers));
+
+    setChannelName("");
+    setChannelType("text");
+    setChannelError("");
+    setShowCreateChannelDialog(false);
+    toast({
+      title: "Success",
+      description: `${channelType === "text" ? "Text" : "Voice"} channel "${newChannel.name}" created!`,
+    });
+  };
+
   const handleChannelClick = (channelId: string) => {
     setSelectedChannel(channelId);
   };
 
   const currentServer = servers.find(s => s.id === selectedServer);
   const currentChannel = currentServer?.channels?.find(c => c.id === selectedChannel);
+
+  const generateInviteLink = () => {
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    return `https://soul.gg/${code}`;
+  };
+
+  const inviteLink = currentServer ? generateInviteLink() : "";
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(inviteLink);
+    toast({
+      title: "Copied!",
+      description: "Invite link copied to clipboard",
+    });
+  };
+
+  const handleOpenServerSettings = () => {
+    if (selectedServer) {
+      navigate(`/server/${selectedServer}/settings`);
+    }
+  };
 
   const handleSendMessage = () => {
     if (message.trim()) {
@@ -281,17 +363,19 @@ const MainPage = () => {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem className="gap-2 cursor-pointer">
+                  <DropdownMenuItem
+                    className="gap-2 cursor-pointer"
+                    onClick={() => setShowInviteDialog(true)}
+                  >
                     <UserCheck className="h-4 w-4" />
                     <span>Invite People</span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem className="gap-2 cursor-pointer">
+                  <DropdownMenuItem
+                    className="gap-2 cursor-pointer"
+                    onClick={handleOpenServerSettings}
+                  >
                     <Settings className="h-4 w-4" />
                     <span>Server Settings</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="gap-2 cursor-pointer">
-                    <Plus className="h-4 w-4" />
-                    <span>Create Channel</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem className="gap-2 cursor-pointer">
                     <Layers className="h-4 w-4" />
@@ -377,7 +461,12 @@ const MainPage = () => {
                   </Button>
                   <span className="text-xs font-semibold text-muted-foreground">TEXT CHANNELS</span>
                 </div>
-                <Button variant="ghost" size="icon" className="h-5 w-5">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5"
+                  onClick={() => setShowCreateChannelDialog(true)}
+                >
                   <Plus className="h-3 w-3" />
                 </Button>
               </div>
@@ -397,7 +486,9 @@ const MainPage = () => {
                         : "hover:bg-accent/50"
                     }`}
                   >
-                    <span className="text-sm"># {channel.name}</span>
+                    <span className="text-sm">
+                      {channel.type === "voice" ? "🎙" : "#"} {channel.name}
+                    </span>
                   </Button>
                 ))}
               </div>
@@ -533,6 +624,120 @@ const MainPage = () => {
         onOpenChange={setShowServerCreationDialog}
         onServerCreate={handleCreateServer}
       />
+
+      {/* Create Channel Dialog */}
+      <Dialog
+        open={showCreateChannelDialog}
+        onOpenChange={(open) => {
+          setShowCreateChannelDialog(open);
+          if (!open) setChannelError("");
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Channel</DialogTitle>
+            <DialogDescription>
+              Channels keep conversations organized. Pick a type and give it a name.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6">
+            {/* Channel Type Selection */}
+            <div className="space-y-3">
+              <Label>Channel Type</Label>
+              <RadioGroup value={channelType} onValueChange={(value) => setChannelType(value as "text" | "voice")}>
+                <div className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-accent/30 cursor-pointer">
+                  <RadioGroupItem value="text" id="text-channel" />
+                  <Label htmlFor="text-channel" className="flex-1 cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold"># Text Channel</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Send messages, images, and more</p>
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-accent/30 cursor-pointer">
+                  <RadioGroupItem value="voice" id="voice-channel" />
+                  <Label htmlFor="voice-channel" className="flex-1 cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold">🎙 Voice Channel</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Hang out together with voice and video</p>
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            {/* Channel Name Input */}
+            <div className="space-y-2">
+              <Label htmlFor="channel-name">Channel Name *</Label>
+              <Input
+                id="channel-name"
+                placeholder="new-channel"
+                value={channelName}
+                onChange={(e) => {
+                  setChannelName(e.target.value);
+                  if (e.target.value.trim()) {
+                    setChannelError("");
+                  }
+                }}
+                onKeyPress={(e) => {
+                  if (e.key === "Enter") {
+                    handleCreateChannel();
+                  }
+                }}
+                className={channelError ? "border-destructive" : ""}
+              />
+              {channelError && (
+                <p className="text-xs text-destructive flex items-center gap-1">
+                  <span>ℹ</span>
+                  {channelError}
+                </p>
+              )}
+            </div>
+
+            {/* Create Button */}
+            <Button
+              onClick={handleCreateChannel}
+              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+            >
+              Create Channel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invite People Dialog */}
+      <Dialog open={showInviteDialog} onOpenChange={setShowInviteDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Invite friends to {currentServer?.name}</DialogTitle>
+            <DialogDescription>
+              Copy and share this invite link to bring people into your community.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Input
+                value={inviteLink}
+                readOnly
+                className="flex-1"
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={copyToClipboard}
+                className="h-10 w-10"
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Share this link with your friends to invite them to this server.
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+
     </div>
   );
 };

@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import MainPage from "./pages/MainPage";
+import ServerSettings from "./pages/ServerSettings";
 import EditProfile from "./pages/EditProfile";
 import ChangeProfiles from "./pages/ChangeProfiles";
 import Friends from "./pages/Friends";
@@ -21,6 +22,7 @@ const router = createBrowserRouter(
     { path: "/login", element: <Login /> },
     { path: "/signup", element: <Signup /> },
     { path: "/main", element: <MainPage /> },
+    { path: "/server/:serverId/settings", element: <ServerSettings /> },
     { path: "/edit-profile", element: <EditProfile /> },
     { path: "/change-profiles", element: <ChangeProfiles /> },
     { path: "/friends", element: <Friends /> },
