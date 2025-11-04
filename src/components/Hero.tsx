@@ -23,7 +23,7 @@ const Hero = () => {
         <p className="text-xl md:text-2xl text-white/95 max-w-3xl mx-auto mb-8 animate-fade-in" style={{ animationDelay: "0.2s" }}>
           soulVoyage is the ultimate platform for solo travelers to connect, plan, and embark on unforgettable adventures together. Find your travel tribe today.
         </p>
-        <Link to="/login">
+        <Link to="/login-auth">
           <Button 
             size="lg" 
             className="bg-accent hover:bg-accent/90 text-accent-foreground text-lg px-8 py-6 font-semibold animate-fade-in shadow-lg hover:shadow-xl transition-all"

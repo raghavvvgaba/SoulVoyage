@@ -38,7 +38,7 @@ const Navbar = () => {
               <span className="sr-only">Toggle theme</span>
             </Button>
             
-            <Link to="/login">
+            <Link to="/login-auth">
               <Button className="bg-accent hover:bg-accent/90 text-accent-foreground font-semibold">
                 Login
               </Button>

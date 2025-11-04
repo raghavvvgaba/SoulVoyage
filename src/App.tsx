@@ -4,9 +4,11 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
+import { AuthProvider } from "@/context/AuthContext";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
-import Login from "./pages/Login";
-import Signup from "./pages/Signup";
+import LoginAuth from "./pages/LoginAuth";
+import SignupAuth from "./pages/SignupAuth";
 import MainPage from "./pages/MainPage";
 import ServerSettings from "./pages/ServerSettings";
 import EditProfile from "./pages/EditProfile";
@@ -19,10 +21,10 @@ const queryClient = new QueryClient();
 const router = createBrowserRouter(
   [
     { path: "/", element: <Index /> },
-    { path: "/login", element: <Login /> },
-    { path: "/signup", element: <Signup /> },
-    { path: "/main", element: <MainPage /> },
-    { path: "/server/:serverId/settings", element: <ServerSettings /> },
+    { path: "/login-auth", element: <LoginAuth /> },
+    { path: "/signup-auth", element: <SignupAuth /> },
+    { path: "/main", element: <ProtectedRoute element={<MainPage />} /> },
+    { path: "/server/:serverId/settings", element: <ProtectedRoute element={<ServerSettings />} /> },
     { path: "/edit-profile", element: <EditProfile /> },
     { path: "/change-profiles", element: <ChangeProfiles /> },
     { path: "/friends", element: <Friends /> },
@@ -38,11 +40,13 @@ const router = createBrowserRouter(
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-  <RouterProvider router={router} future={{ v7_startTransition: true }} />
-      </TooltipProvider>
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <RouterProvider router={router} future={{ v7_startTransition: true }} />
+        </TooltipProvider>
+      </AuthProvider>
     </ThemeProvider>
   </QueryClientProvider>
 );
