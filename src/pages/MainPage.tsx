@@ -45,12 +45,19 @@ interface Server {
   name: string;
   icon?: string;
   channels?: Channel[];
+  categories?: Category[];
 }
 
 interface Channel {
   id: string;
   name: string;
   type?: "text" | "voice";
+  categoryId?: string;
+}
+
+interface Category {
+  id: string;
+  name: string;
 }
 
 const MainPage = () => {
@@ -73,38 +80,55 @@ const MainPage = () => {
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [profileTag, setProfileTag] = useState("");
-  const [friends, setFriends] = useState<Friend[]>([
-    { id: "1", name: "Sarah Johnson" },
-    { id: "2", name: "Mike Chen" },
-    { id: "3", name: "Emma Wilson" },
-  ]);
-  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([
-    { id: "req1", name: "Alex Rivera" },
-    { id: "req2", name: "Jordan Smith" },
-  ]);
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
 
   const defaultServers: Server[] = [
     { 
       id: "1", 
       name: "Travel Enthusiasts",
       icon: undefined,
+      categories: [
+        { id: "cat_1", name: "TEXT MESSAGES" }
+      ],
       channels: [
-        { id: "1", name: "general", type: "text" },
+        { id: "1", name: "general", type: "text", categoryId: "cat_1" },
       ]
     },
     { 
       id: "2", 
       name: "Adventure Club",
       icon: undefined,
+      categories: [
+        { id: "cat_1", name: "TEXT MESSAGES" }
+      ],
       channels: [
-        { id: "1", name: "general", type: "text" },
+        { id: "1", name: "general", type: "text", categoryId: "cat_1" },
       ]
     },
   ];
 
+  const ensureServerHasCategories = (server: Server): Server => {
+    if (!server.categories || server.categories.length === 0) {
+      return {
+        ...server,
+        categories: [{ id: "cat_1", name: "TEXT MESSAGES" }],
+        channels: server.channels?.map(c => ({ ...c, categoryId: c.categoryId || "cat_1" })) || []
+      };
+    }
+    return {
+      ...server,
+      channels: server.channels?.map(c => ({ ...c, categoryId: c.categoryId || "cat_1" })) || []
+    };
+  };
+
   const [servers, setServers] = useState<Server[]>(() => {
     const savedServers = localStorage.getItem("soulVoyageServers");
-    return savedServers ? JSON.parse(savedServers) : defaultServers;
+    const parsed = savedServers ? JSON.parse(savedServers) : defaultServers;
+    return parsed.map(ensureServerHasCategories);
   });
 
   useEffect(() => {
@@ -128,7 +152,8 @@ const MainPage = () => {
       id: Date.now().toString(),
       name: serverData.name,
       icon: serverData.icon,
-      channels: [{ id: "general_1", name: "general", type: "text" }],
+      categories: [{ id: "cat_1", name: "TEXT MESSAGES" }],
+      channels: [{ id: "general_1", name: "general", type: "text", categoryId: "cat_1" }],
     };
 
     const updatedServers = [...servers, newServer];
@@ -162,6 +187,7 @@ const MainPage = () => {
       id: Date.now().toString(),
       name: channelName.toLowerCase().replace(/\s+/g, "-"),
       type: channelType,
+      categoryId: selectedCategoryId || "cat_1",
     };
 
     const updatedServers = servers.map((server) =>
@@ -177,9 +203,41 @@ const MainPage = () => {
     setChannelType("text");
     setChannelError("");
     setShowCreateChannelDialog(false);
+    setSelectedCategoryId(null);
     toast({
       title: "Success",
       description: `${channelType === "text" ? "Text" : "Voice"} channel "${newChannel.name}" created!`,
+    });
+  };
+
+  const handleCreateCategory = () => {
+    if (!newCategoryName.trim()) {
+      setIsCreatingCategory(false);
+      setNewCategoryName("");
+      return;
+    }
+
+    if (!selectedServer) return;
+
+    const newCategory: Category = {
+      id: `cat_${Date.now()}`,
+      name: newCategoryName,
+    };
+
+    const updatedServers = servers.map((server) =>
+      server.id === selectedServer
+        ? { ...server, categories: [...(server.categories || []), newCategory] }
+        : server
+    );
+
+    setServers(updatedServers);
+    localStorage.setItem("soulVoyageServers", JSON.stringify(updatedServers));
+
+    setNewCategoryName("");
+    setIsCreatingCategory(false);
+    toast({
+      title: "Success",
+      description: `Category "${newCategory.name}" created!`,
     });
   };
 
@@ -346,45 +404,44 @@ const MainPage = () => {
       {/* Direct Messages / Channels Sidebar */}
       <div className="w-60 bg-card/50 backdrop-blur-sm border-r border-border flex flex-col">
         {/* Sidebar Header */}
-        <div className="p-4 border-b border-border flex items-center justify-between">
-          {showDirectMessages ? (
-            <h2 className="text-lg font-semibold">Direct Messages</h2>
-          ) : (
-            <div className="flex items-center gap-2 flex-1">
-              <h2 className="text-lg font-semibold flex-1">{currentServer?.name}</h2>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 ml-auto"
-                  >
-                    <ChevronDown className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    className="gap-2 cursor-pointer"
-                    onClick={() => setShowInviteDialog(true)}
-                  >
-                    <UserCheck className="h-4 w-4" />
-                    <span>Invite People</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="gap-2 cursor-pointer"
-                    onClick={handleOpenServerSettings}
-                  >
-                    <Settings className="h-4 w-4" />
-                    <span>Server Settings</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="gap-2 cursor-pointer">
-                    <Layers className="h-4 w-4" />
-                    <span>Create Category</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          )}
+        <div className="h-14 px-4 border-b border-border flex items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold">
+            {showDirectMessages ? "Direct Messages" : currentServer?.name}
+          </h2>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`h-6 w-6 ${showDirectMessages ? "invisible" : ""}`}
+              >
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                className="gap-2 cursor-pointer"
+                onClick={() => setShowInviteDialog(true)}
+              >
+                <UserCheck className="h-4 w-4" />
+                <span>Invite People</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="gap-2 cursor-pointer"
+                onClick={handleOpenServerSettings}
+              >
+                <Settings className="h-4 w-4" />
+                <span>Server Settings</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="gap-2 cursor-pointer"
+                onClick={() => setIsCreatingCategory(true)}
+              >
+                <Layers className="h-4 w-4" />
+                <span>Create Category</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {showDirectMessages ? (
@@ -443,56 +500,62 @@ const MainPage = () => {
           </>
         ) : (
           <>
-            {/* Text Channels Section */}
-            <div className="p-2 border-b border-border">
-              <div className="flex items-center justify-between px-2 py-1">
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-5 w-5 p-0"
-                    onClick={() => selectedServer && toggleChannelsExpanded(selectedServer)}
-                  >
-                    <ChevronDown
-                      className={`h-4 w-4 transition-transform ${
-                        isChannelsExpanded ? "rotate-0" : "-rotate-90"
+            {/* Categories Section */}
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {currentServer?.categories?.map((category) => (
+                <div key={category.id} className="space-y-1">
+                  <div className="flex items-center justify-between px-2 py-1">
+                    <span className="text-xs font-semibold text-muted-foreground">{category.name}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5"
+                      onClick={() => {
+                        setSelectedCategoryId(category.id);
+                        setShowCreateChannelDialog(true);
+                      }}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  {currentServer?.channels?.filter(c => c.categoryId === category.id).map((channel) => (
+                    <Button
+                      key={channel.id}
+                      variant="ghost"
+                      onClick={() => handleChannelClick(channel.id)}
+                      className={`w-full justify-start gap-3 ml-2 ${
+                        selectedChannel === channel.id
+                          ? "bg-accent/50 hover:bg-accent/50"
+                          : "hover:bg-accent/50"
                       }`}
-                    />
-                  </Button>
-                  <span className="text-xs font-semibold text-muted-foreground">TEXT CHANNELS</span>
+                    >
+                      <span className="text-sm">
+                        {channel.type === "voice" ? "🎙" : "#"} {channel.name}
+                      </span>
+                    </Button>
+                  ))}
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5"
-                  onClick={() => setShowCreateChannelDialog(true)}
-                >
-                  <Plus className="h-3 w-3" />
-                </Button>
-              </div>
-            </div>
+              ))}
 
-            {/* Channels List */}
-            {isChannelsExpanded && (
-              <div className="flex-1 overflow-y-auto p-2">
-                {currentServer?.channels?.map((channel) => (
-                  <Button
-                    key={channel.id}
-                    variant="ghost"
-                    onClick={() => handleChannelClick(channel.id)}
-                    className={`w-full justify-start gap-3 mb-1 ${
-                      selectedChannel === channel.id
-                        ? "bg-accent/50 hover:bg-accent/50"
-                        : "hover:bg-accent/50"
-                    }`}
-                  >
-                    <span className="text-sm">
-                      {channel.type === "voice" ? "🎙" : "#"} {channel.name}
-                    </span>
-                  </Button>
-                ))}
-              </div>
-            )}
+              {/* New Category Input */}
+              {isCreatingCategory && (
+                <div className="px-2 py-1">
+                  <Input
+                    autoFocus
+                    placeholder="Category name"
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    onBlur={handleCreateCategory}
+                    onKeyPress={(e) => {
+                      if (e.key === "Enter") {
+                        handleCreateCategory();
+                      }
+                    }}
+                    className="text-xs h-7"
+                  />
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>
@@ -501,7 +564,7 @@ const MainPage = () => {
       <div className="flex-1 flex flex-col">
         {/* Top Bar */}
         <div className="h-14 border-b border-border flex items-center justify-between px-4 bg-card/30 backdrop-blur-sm">
-          <h3 className="font-semibold">
+          <h3 className="text-lg font-semibold">
             {showDirectMessages ? (
               selectedFriend ? selectedFriend.name : "Direct Messages"
             ) : (

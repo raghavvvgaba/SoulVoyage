@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Plus, CheckCircle2 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -7,46 +7,62 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
 
 interface Profile {
   id: string;
   name: string;
   email: string;
-  isCurrent: boolean;
   avatarUrl?: string;
+  isCurrent?: boolean;
 }
 
 const ChangeProfiles = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   
-  const [profiles] = useState<Profile[]>([
+  const [profiles, setProfiles] = useState<Profile[]>([
     {
       id: "1",
       name: "John Doe",
       email: "john.doe@example.com",
-      isCurrent: true,
     },
     {
       id: "2",
       name: "Jane Smith",
       email: "jane.smith@example.com",
-      isCurrent: false,
     },
     {
       id: "3",
       name: "Bob Johnson",
       email: "bob.johnson@example.com",
-      isCurrent: false,
     },
   ]);
 
+  const [currentProfileId, setCurrentProfileId] = useState<string>("1");
+
+  useEffect(() => {
+    const savedProfileId = localStorage.getItem("currentProfileId");
+    if (savedProfileId) {
+      setCurrentProfileId(savedProfileId);
+    }
+  }, []);
+
   const handleSwitchProfile = (profileId: string) => {
-    console.log("Switching to profile:", profileId);
-    navigate("/main");
+    const profile = profiles.find(p => p.id === profileId);
+    if (profile) {
+      localStorage.setItem("currentProfileId", profileId);
+      setCurrentProfileId(profileId);
+      toast({
+        title: "Profile Switched",
+        description: `Switched to ${profile.name}'s account`,
+      });
+      setTimeout(() => navigate("/main"), 500);
+    }
   };
 
   const handleAddProfile = () => {
-    navigate("/login");
+    navigate("/signup-auth");
   };
 
   return (
@@ -79,16 +95,18 @@ const ChangeProfiles = () => {
             <CardContent>
               <div className="space-y-4">
                 {/* Existing Profiles */}
-                {profiles.map((profile) => (
-                  <Card
-                    key={profile.id}
-                    className={`cursor-pointer transition-all hover:shadow-md ${
-                      profile.isCurrent
-                        ? "border-primary bg-primary/5"
-                        : "border-border"
-                    }`}
-                    onClick={() => !profile.isCurrent && handleSwitchProfile(profile.id)}
-                  >
+                {profiles.map((profile) => {
+                  const isCurrent = profile.id === currentProfileId;
+                  return (
+                    <Card
+                      key={profile.id}
+                      className={`cursor-pointer transition-all hover:shadow-md ${
+                        isCurrent
+                          ? "border-primary bg-primary/5"
+                          : "border-border"
+                      }`}
+                      onClick={() => !isCurrent && handleSwitchProfile(profile.id)}
+                    >
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
@@ -104,7 +122,7 @@ const ChangeProfiles = () => {
                           <div>
                             <div className="flex items-center gap-2">
                               <h3 className="font-semibold">{profile.name}</h3>
-                              {profile.isCurrent && (
+                              {isCurrent && (
                                 <Badge variant="default" className="text-xs">
                                   Current
                                 </Badge>
@@ -115,13 +133,14 @@ const ChangeProfiles = () => {
                             </p>
                           </div>
                         </div>
-                        {profile.isCurrent && (
+                        {isCurrent && (
                           <CheckCircle2 className="h-6 w-6 text-primary" />
                         )}
                       </div>
                     </CardContent>
                   </Card>
-                ))}
+                  );
+                })}
 
                 {/* Add New Profile Button */}
                 <Card

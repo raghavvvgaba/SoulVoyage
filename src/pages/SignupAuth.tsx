@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTheme } from "next-themes";
 import {
   createUserWithEmailAndPassword,
 } from "firebase/auth";
@@ -8,12 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, ArrowLeft, Sun, Moon } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 
 const SignupAuth = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { theme, setTheme } = useTheme();
   const [firstName, setFirstName] = useState("");
   const [middleName, setMiddleName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -138,27 +140,47 @@ const SignupAuth = () => {
 
 
   return (
-    <div className="h-screen w-screen bg-gradient-to-br from-slate-950 to-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Starry background effect */}
-      <div className="absolute inset-0 overflow-hidden">
-        {stars.map((star, i) => (
-          <div
-            key={i}
-            className="absolute rounded-full bg-white opacity-30"
-            style={{
-              width: star.width + 'px',
-              height: star.height + 'px',
-              left: star.left + '%',
-              top: star.top + '%',
-              animation: `twinkle ${star.duration}s infinite`,
-            }}
-          />
-        ))}
-      </div>
+    <div className={`h-screen w-screen flex items-center justify-center p-4 relative overflow-hidden ${theme === "dark" ? "bg-gradient-to-br from-slate-950 to-slate-900" : "bg-gradient-to-br from-slate-50 to-slate-100"}`}>
+      {/* Starry background effect - only in dark mode */}
+      {theme === "dark" && (
+        <div className="absolute inset-0 overflow-hidden">
+          {stars.map((star, i) => (
+            <div
+              key={i}
+              className="absolute rounded-full bg-white opacity-30"
+              style={{
+                width: star.width + 'px',
+                height: star.height + 'px',
+                left: star.left + '%',
+                top: star.top + '%',
+                animation: `twinkle ${star.duration}s infinite`,
+              }}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Content */}
       <div className="relative z-10 w-full max-w-sm md:max-w-md lg:max-w-lg">
-        <div className="w-full space-y-2 md:space-y-3 lg:space-y-4 bg-slate-900/50 backdrop-blur-sm border border-slate-700 rounded-lg p-3 md:p-5 lg:p-8 shadow-lg">
+        <div className={`w-full space-y-2 md:space-y-3 lg:space-y-4 rounded-lg p-3 md:p-5 lg:p-8 shadow-lg relative backdrop-blur-sm ${theme === "dark" ? "bg-slate-900/50 border border-slate-700" : "bg-white/80 border border-slate-200"}`}>
+          {/* Back to Home Button */}
+          <button
+            onClick={() => navigate("/")}
+            className="absolute -top-12 left-0 z-20 flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors"
+          >
+            <ArrowLeft size={20} />
+            <span className="text-sm">Back to Home</span>
+          </button>
+
+          {/* Theme Toggle Button */}
+          <button
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            className="absolute -top-12 right-0 z-20 flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors"
+          >
+            {theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
+            <span className="text-sm">{theme === "dark" ? "Light" : "Dark"}</span>
+          </button>
+
           {/* Header */}
           <div className="text-center space-y-1 md:space-y-2">
             <h1 className="text-xl md:text-2xl lg:text-3xl font-bold">SoulVoyage</h1>

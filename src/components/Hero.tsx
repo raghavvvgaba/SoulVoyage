@@ -1,18 +1,25 @@
 import { Link } from "react-router-dom";
+import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import heroImage from "@/assets/hero-travelers.jpg";
+import heroDarkImage from "@/assets/hero-dark-stargazing.jpg";
 
 const Hero = () => {
+  const { theme } = useTheme();
+  
+  const currentImage = theme === "dark" ? heroDarkImage : heroImage;
+
   return (
     <section className="relative min-h-[600px] flex items-center justify-center overflow-hidden">
       {/* Background Image with Overlay */}
       <div className="absolute inset-0 z-0">
         <img 
-          src={heroImage} 
+          src={currentImage}
           alt="Travelers on adventure" 
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover transition-opacity duration-500"
+          style={theme === "dark" ? { filter: "brightness(0.7)" } : {}}
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-[hsl(var(--hero-from))]/90 to-[hsl(var(--hero-to))]/80 dark:from-[hsl(var(--hero-from))]/95 dark:to-[hsl(var(--hero-to))]/90"></div>
+        <div className={theme === "dark" ? "absolute inset-0 bg-gradient-to-r from-[hsl(var(--hero-from))]/70 to-[hsl(var(--hero-to))]/60 dark:from-[hsl(var(--hero-from))]/70 dark:to-[hsl(var(--hero-to))]/60" : "absolute inset-0 bg-gradient-to-r from-[hsl(var(--hero-from))]/80 to-[hsl(var(--hero-to))]/70"}></div>
       </div>
 
       {/* Content */}

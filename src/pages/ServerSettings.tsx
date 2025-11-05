@@ -9,18 +9,34 @@ import { ProfileMenu } from "@/components/ProfileMenu";
 import { Upload, X, ArrowLeft, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Separator } from "@/components/ui/separator";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Server {
   id: string;
   name: string;
   icon?: string;
   channels?: Channel[];
+  categories?: Category[];
+}
+
+interface Category {
+  id: string;
+  name: string;
 }
 
 interface Channel {
   id: string;
   name: string;
   type?: "text" | "voice";
+  categoryId?: string;
 }
 
 const ServerSettings = () => {
@@ -34,13 +50,15 @@ const ServerSettings = () => {
       id: "1",
       name: "Travel Enthusiasts",
       icon: undefined,
-      channels: [{ id: "1", name: "general", type: "text" }],
+      categories: [{ id: "cat_1", name: "TEXT MESSAGES" }],
+      channels: [{ id: "1", name: "general", type: "text", categoryId: "cat_1" }],
     },
     {
       id: "2",
       name: "Adventure Club",
       icon: undefined,
-      channels: [{ id: "1", name: "general", type: "text" }],
+      categories: [{ id: "cat_1", name: "TEXT MESSAGES" }],
+      channels: [{ id: "1", name: "general", type: "text", categoryId: "cat_1" }],
     },
   ];
 
@@ -54,6 +72,8 @@ const ServerSettings = () => {
   const [editedServerIcon, setEditedServerIcon] = useState<string | null>(
     currentServer?.icon || null
   );
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [channelToDelete, setChannelToDelete] = useState<string | null>(null);
 
   if (!currentServer) {
     return (
@@ -122,6 +142,34 @@ const ServerSettings = () => {
       });
       navigate("/main");
     }
+  };
+
+  const handleDeleteChannel = (channelId: string) => {
+    setChannelToDelete(channelId);
+    setDeleteConfirmOpen(true);
+  };
+
+  const confirmDeleteChannel = () => {
+    if (!channelToDelete || !serverId) return;
+
+    const updatedServers = servers.map((server) =>
+      server.id === serverId
+        ? {
+            ...server,
+            channels: server.channels?.filter((c) => c.id !== channelToDelete) || [],
+          }
+        : server
+    );
+
+    setServers(updatedServers);
+    localStorage.setItem("soulVoyageServers", JSON.stringify(updatedServers));
+    setDeleteConfirmOpen(false);
+    setChannelToDelete(null);
+
+    toast({
+      title: "Success",
+      description: "Channel deleted successfully",
+    });
   };
 
   const getInitials = (name: string) => {
@@ -240,6 +288,12 @@ const ServerSettings = () => {
                   <p className="text-sm font-mono bg-accent/30 p-3 rounded">{currentServer.id}</p>
                 </div>
                 <div className="space-y-2">
+                  <p className="text-sm font-medium text-muted-foreground">Categories</p>
+                  <p className="text-sm">
+                    {currentServer.categories?.length || 0} category(ies)
+                  </p>
+                </div>
+                <div className="space-y-2">
                   <p className="text-sm font-medium text-muted-foreground">Channels</p>
                   <p className="text-sm">
                     {currentServer.channels?.length || 0} channel(s)
@@ -263,18 +317,39 @@ const ServerSettings = () => {
             {/* Channels Section */}
             <div className="space-y-4">
               <h2 className="text-lg font-semibold">Channels</h2>
-              <div className="space-y-2">
-                {currentServer.channels?.map((channel) => (
-                  <div
-                    key={channel.id}
-                    className="flex items-center gap-2 p-3 rounded bg-accent/20"
-                  >
-                    <span className="text-sm">
-                      {channel.type === "voice" ? "🎙" : "#"} {channel.name}
-                    </span>
-                    <span className="ml-auto text-xs text-muted-foreground bg-background px-2 py-1 rounded">
-                      {channel.type === "voice" ? "Voice" : "Text"}
-                    </span>
+              <div className="space-y-4">
+                {currentServer.categories?.map((category) => (
+                  <div key={category.id} className="space-y-2">
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase">
+                      {category.name}
+                    </h3>
+                    <div className="space-y-2">
+                      {currentServer.channels
+                        ?.filter((c) => c.categoryId === category.id)
+                        .map((channel) => (
+                          <div
+                            key={channel.id}
+                            className="flex items-center gap-2 p-3 rounded bg-accent/20 justify-between"
+                          >
+                            <span className="text-sm">
+                              {channel.type === "voice" ? "🎙" : "#"} {channel.name}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground bg-background px-2 py-1 rounded">
+                                {channel.type === "voice" ? "Voice" : "Text"}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => handleDeleteChannel(channel.id)}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -302,6 +377,27 @@ const ServerSettings = () => {
           </div>
         </div>
       </div>
+
+      {/* Delete Channel Confirmation Dialog */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Channel?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this channel? All chat history will be lost. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex gap-3 justify-end">
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteChannel}
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              Delete
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
