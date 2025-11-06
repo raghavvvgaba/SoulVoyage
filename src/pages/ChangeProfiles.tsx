@@ -42,16 +42,30 @@ const ChangeProfiles = () => {
   const [currentProfileId, setCurrentProfileId] = useState<string>("1");
 
   useEffect(() => {
+    const savedProfiles = localStorage.getItem("profiles");
+    if (savedProfiles) {
+      try {
+        setProfiles(JSON.parse(savedProfiles));
+      } catch (e) {
+        console.error("Error parsing profiles:", e);
+      }
+    }
+
     const savedProfileId = localStorage.getItem("currentProfileId");
     if (savedProfileId) {
       setCurrentProfileId(savedProfileId);
     }
   }, []);
 
+  useEffect(() => {
+    localStorage.setItem("profiles", JSON.stringify(profiles));
+  }, [profiles]);
+
   const handleSwitchProfile = (profileId: string) => {
     const profile = profiles.find(p => p.id === profileId);
     if (profile) {
       localStorage.setItem("currentProfileId", profileId);
+      localStorage.setItem("profiles", JSON.stringify(profiles));
       setCurrentProfileId(profileId);
       toast({
         title: "Profile Switched",

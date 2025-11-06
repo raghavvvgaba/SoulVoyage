@@ -1,5 +1,6 @@
 import { User, LogOut, UserCog, Users } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+import { useState, useEffect } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,8 +12,41 @@ import {
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
+interface Profile {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl?: string;
+}
+
 export function ProfileMenu() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
+
+  useEffect(() => {
+    const currentProfileId = localStorage.getItem("currentProfileId");
+    const profilesJson = localStorage.getItem("profiles");
+    
+    if (currentProfileId && profilesJson) {
+      try {
+        const profiles = JSON.parse(profilesJson);
+        const profile = profiles.find((p: Profile) => p.id === currentProfileId);
+        setCurrentProfile(profile);
+      } catch (e) {
+        console.error("Error parsing profiles:", e);
+      }
+    }
+  }, [location]);
+
+  const getInitials = (name: string): string => {
+    if (!name) return "U";
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase();
+  };
 
   const handleLogout = () => {
     navigate("/");
@@ -31,9 +65,9 @@ export function ProfileMenu() {
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="icon" className="relative rounded-full">
           <Avatar className="h-5 w-5">
-            <AvatarImage src="" />
-            <AvatarFallback>
-              <User className="h-4 w-4" />
+            <AvatarImage src={currentProfile?.avatarUrl} />
+            <AvatarFallback className="text-xs font-semibold">
+              {currentProfile ? getInitials(currentProfile.name) : <User className="h-4 w-4" />}
             </AvatarFallback>
           </Avatar>
           <span className="sr-only">Open profile menu</span>
