@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ProfileMenu } from "@/components/ProfileMenu";
@@ -6,7 +6,7 @@ import { ServerCreationDialog } from "@/components/ServerCreationDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { UserPlus, Users, Plus, Send, MessageSquare, ChevronDown, UserCheck, Settings, Layers, Copy } from "lucide-react";
+import { UserPlus, Users, Plus, Send, MessageSquare, ChevronDown, UserCheck, Settings, Layers, Copy, FileText, Image, Video, PieChart } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
@@ -27,6 +27,8 @@ import {
 } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { db } from "@/lib/firebase";
+import { collection, addDoc, query, where, orderBy, onSnapshot, Timestamp } from "firebase/firestore";
 
 interface Friend {
   id: string;
@@ -38,6 +40,15 @@ interface FriendRequest {
   id: string;
   name: string;
   avatar?: string;
+}
+
+interface Message {
+  id: string;
+  senderId: string;
+  senderName: string;
+  content: string;
+  timestamp: number;
+  conversationId: string;
 }
 
 interface Server {
@@ -83,8 +94,29 @@ const MainPage = () => {
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
-  const [friends, setFriends] = useState<Friend[]>([]);
-  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const [friends, setFriends] = useState<Friend[]>(() => {
+    const saved = localStorage.getItem("soulVoyageFriends");
+    return saved ? JSON.parse(saved) : [
+      { id: "1", name: "Sarah Johnson" },
+      { id: "2", name: "Mike Chen" },
+      { id: "3", name: "Emma Wilson" },
+    ];
+  });
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>(() => {
+    const saved = localStorage.getItem("soulVoyageFriendRequests");
+    return saved ? JSON.parse(saved) : [
+      { id: "req1", name: "Alex Rivera" },
+      { id: "req2", name: "Jordan Smith" },
+      { id: "req3", name: "Droid" },
+    ];
+  });
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const saved = localStorage.getItem("soulVoyageMessages");
+    return saved ? JSON.parse(saved) : [];
+  });
+  const currentProfileName = localStorage.getItem("currentProfileName") || "You";
+  const wsRef = useRef<WebSocket | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
   const defaultServers: Server[] = [
     { 
@@ -130,6 +162,87 @@ const MainPage = () => {
     const parsed = savedServers ? JSON.parse(savedServers) : defaultServers;
     return parsed.map(ensureServerHasCategories);
   });
+
+  useEffect(() => {
+    localStorage.setItem("soulVoyageFriends", JSON.stringify(friends));
+  }, [friends]);
+
+  useEffect(() => {
+    localStorage.setItem("soulVoyageFriendRequests", JSON.stringify(friendRequests));
+  }, [friendRequests]);
+
+  useEffect(() => {
+    localStorage.setItem("soulVoyageMessages", JSON.stringify(messages));
+  }, [messages]);
+
+  // Initialize WebSocket connection (for sending messages to server)
+  useEffect(() => {
+    try {
+      wsRef.current = new WebSocket("ws://localhost:8081");
+
+      wsRef.current.onopen = () => {
+        console.log("WebSocket connected");
+      };
+
+      wsRef.current.onerror = (error) => {
+        console.error("WebSocket error:", error);
+      };
+
+      wsRef.current.onclose = () => {
+        console.log("WebSocket disconnected");
+      };
+    } catch (error) {
+      console.error("WebSocket connection error:", error);
+    }
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+      }
+    };
+  }, []);
+
+  // Load messages from Firestore for current conversation
+  useEffect(() => {
+    const conversationId = selectedFriend?.id || selectedChannel;
+    
+    if (!conversationId) {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+      return;
+    }
+
+    try {
+      const messagesRef = collection(db, "conversations", conversationId, "messages");
+      const q = query(messagesRef, orderBy("timestamp", "asc"));
+
+      unsubscribeRef.current = onSnapshot(q, (snapshot) => {
+        const firestoreMessages = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          senderId: doc.data().senderId,
+          senderName: doc.data().senderName,
+          content: doc.data().content,
+          timestamp: doc.data().timestamp,
+          conversationId: doc.data().conversationId,
+        }));
+        setMessages(firestoreMessages);
+      });
+    } catch (error) {
+      console.error("Error setting up Firestore listener:", error);
+    }
+
+    return () => {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+    };
+  }, [selectedFriend?.id, selectedChannel]);
 
   useEffect(() => {
     if (searchParams.get("settingsSaved") === "true") {
@@ -269,10 +382,35 @@ const MainPage = () => {
     }
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (message.trim()) {
-      console.log("Sending message:", message);
+      const conversationId = selectedFriend?.id || selectedChannel || "";
+      const newMessage: Message = {
+        id: Date.now().toString(),
+        senderId: "current-user",
+        senderName: currentProfileName,
+        content: message,
+        timestamp: Date.now(),
+        conversationId,
+      };
+      
       setMessage("");
+      
+      try {
+        // Save to Firestore (Firestore listener will pick it up automatically)
+        const messagesRef = collection(db, "conversations", conversationId, "messages");
+        await addDoc(messagesRef, {
+          ...newMessage,
+          timestamp: Timestamp.now(),
+        });
+      } catch (error) {
+        console.error("Error sending message:", error);
+        toast({
+          title: "Error",
+          description: "Failed to send message",
+          variant: "destructive",
+        });
+      }
     }
   };
 
@@ -298,7 +436,7 @@ const MainPage = () => {
       name: profileTag,
     };
 
-    setFriends([...friends, newFriend]);
+    setFriends([newFriend, ...friends]);
     setProfileTag("");
     setShowAddFriendDialog(false);
     toast({
@@ -310,7 +448,7 @@ const MainPage = () => {
   const handleAcceptFriendRequest = (requestId: string) => {
     const request = friendRequests.find(r => r.id === requestId);
     if (request) {
-      setFriends([...friends, { id: request.id, name: request.name, avatar: request.avatar }]);
+      setFriends([{ id: request.id, name: request.name, avatar: request.avatar }, ...friends]);
       setFriendRequests(friendRequests.filter(r => r.id !== requestId));
       toast({
         title: "Friend Request Accepted",
@@ -581,32 +719,60 @@ const MainPage = () => {
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            {showDirectMessages ? (
-              selectedFriend ? (
-                <>
-                  <h1 className="text-4xl font-bold mb-2">No messages yet</h1>
-                  <p className="text-muted-foreground">
-                    Start the conversation with {selectedFriend.name}
-                  </p>
-                </>
-              ) : (
-                <>
-                  <h1 className="text-4xl font-bold mb-2">Let's get you started</h1>
-                  <p className="text-muted-foreground">
-                    Select a server, channel, or a DM to begin.
-                  </p>
-                </>
-              )
-            ) : (
-              <>
-                <h1 className="text-4xl font-bold mb-2">Welcome to #{currentChannel?.name}</h1>
-                <p className="text-muted-foreground">
-                  Start a conversation in this channel.
-                </p>
-              </>
-            )}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {(() => {
+              const conversationId = selectedFriend?.id || selectedChannel || "";
+              const conversationMessages = messages.filter(m => m.conversationId === conversationId);
+              
+              if (conversationMessages.length === 0) {
+                return (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center">
+                      {showDirectMessages ? (
+                        selectedFriend ? (
+                          <>
+                            <h1 className="text-4xl font-bold mb-2">No messages yet</h1>
+                            <p className="text-muted-foreground">
+                              Start the conversation with {selectedFriend.name}
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <h1 className="text-4xl font-bold mb-2">Let's get you started</h1>
+                            <p className="text-muted-foreground">
+                              Select a server, channel, or a DM to begin.
+                            </p>
+                          </>
+                        )
+                      ) : (
+                        <>
+                          <h1 className="text-4xl font-bold mb-2">Welcome to #{currentChannel?.name}</h1>
+                          <p className="text-muted-foreground">
+                            Start a conversation in this channel.
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+              
+              return conversationMessages.map((msg) => (
+                <div key={msg.id} className={`flex ${msg.senderId === "current-user" ? "justify-end" : "justify-start"}`}>
+                  <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                    msg.senderId === "current-user"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-accent/20 text-foreground"
+                  }`}>
+                    {msg.senderId !== "current-user" && (
+                      <p className="text-xs font-semibold mb-1">{msg.senderName}</p>
+                    )}
+                    <p className="break-words">{msg.content}</p>
+                  </div>
+                </div>
+              ));
+            })()}
           </div>
         </div>
 
@@ -614,13 +780,35 @@ const MainPage = () => {
         {((showDirectMessages && selectedFriend) || (!showDirectMessages && selectedChannel)) && (
           <div className="p-4 border-t border-border bg-card/30 backdrop-blur-sm">
             <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="rounded-full"
-              >
-                <Plus className="h-5 w-5" />
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="rounded-full"
+                  >
+                    <Plus className="h-5 w-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" side="top" className="w-48">
+                  <DropdownMenuItem className="gap-2 cursor-pointer">
+                    <FileText className="h-4 w-4" />
+                    <span>Files</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="gap-2 cursor-pointer">
+                    <Image className="h-4 w-4" />
+                    <span>Photos</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="gap-2 cursor-pointer">
+                    <Video className="h-4 w-4" />
+                    <span>Videos</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="gap-2 cursor-pointer">
+                    <PieChart className="h-4 w-4" />
+                    <span>Poll</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <div className="flex-1 relative">
                 <Input
                   placeholder={showDirectMessages ? `Message ${selectedFriend?.name}...` : `Message in #${currentChannel?.name}`}
@@ -631,9 +819,8 @@ const MainPage = () => {
                 />
               </div>
               <Button
-                variant="ghost"
                 size="icon"
-                className="rounded-full"
+                className="rounded-full bg-transparent hover:bg-primary text-primary hover:text-primary-foreground transition-colors"
                 onClick={handleSendMessage}
                 disabled={!message.trim()}
               >

@@ -63,10 +63,10 @@ export function ProfileMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="icon" className="relative rounded-full">
+        <Button size="icon" className="relative rounded-full bg-primary hover:bg-primary/90 text-primary-foreground">
           <Avatar className="h-5 w-5">
             <AvatarImage src={currentProfile?.avatarUrl} />
-            <AvatarFallback className="text-xs font-semibold">
+            <AvatarFallback className="text-xs font-semibold bg-primary text-primary-foreground">
               {currentProfile ? getInitials(currentProfile.name) : <User className="h-4 w-4" />}
             </AvatarFallback>
           </Avatar>

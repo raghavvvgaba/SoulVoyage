@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, UserPlus, Check, X, Trash2 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -32,19 +32,34 @@ const Friends = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   
-  const [friends, setFriends] = useState<Friend[]>([
-    { id: "1", name: "Sarah Johnson" },
-    { id: "2", name: "Mike Chen" },
-    { id: "3", name: "Emma Wilson" },
-  ]);
+  const [friends, setFriends] = useState<Friend[]>(() => {
+    const saved = localStorage.getItem("soulVoyageFriends");
+    return saved ? JSON.parse(saved) : [
+      { id: "1", name: "Sarah Johnson" },
+      { id: "2", name: "Mike Chen" },
+      { id: "3", name: "Emma Wilson" },
+    ];
+  });
 
-  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([
-    { id: "req1", name: "Alex Rivera" },
-    { id: "req2", name: "Jordan Smith" },
-  ]);
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>(() => {
+    const saved = localStorage.getItem("soulVoyageFriendRequests");
+    return saved ? JSON.parse(saved) : [
+      { id: "req1", name: "Alex Rivera" },
+      { id: "req2", name: "Jordan Smith" },
+      { id: "req3", name: "Droid" },
+    ];
+  });
 
   const [showRemoveDialog, setShowRemoveDialog] = useState(false);
   const [friendToRemove, setFriendToRemove] = useState<Friend | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem("soulVoyageFriends", JSON.stringify(friends));
+  }, [friends]);
+
+  useEffect(() => {
+    localStorage.setItem("soulVoyageFriendRequests", JSON.stringify(friendRequests));
+  }, [friendRequests]);
 
   const getInitials = (name: string) => {
     return name
@@ -57,7 +72,7 @@ const Friends = () => {
   const handleAcceptFriendRequest = (requestId: string) => {
     const request = friendRequests.find(r => r.id === requestId);
     if (request) {
-      setFriends([...friends, { id: request.id, name: request.name, avatar: request.avatar }]);
+      setFriends([{ id: request.id, name: request.name, avatar: request.avatar }, ...friends]);
       setFriendRequests(friendRequests.filter(r => r.id !== requestId));
       toast({
         title: "Friend Request Accepted",

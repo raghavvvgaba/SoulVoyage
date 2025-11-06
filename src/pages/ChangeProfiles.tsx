@@ -76,7 +76,7 @@ const ChangeProfiles = () => {
   };
 
   const handleAddProfile = () => {
-    navigate("/signup-auth");
+    navigate("/login-auth");
   };
 
   return (

@@ -8,7 +8,7 @@ const Navbar = () => {
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b bg-[hsl(var(--nav-bg))] border-[hsl(var(--nav-border))] backdrop-blur-sm">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           <Link to="/" className="text-2xl font-bold text-primary">
             soulVoyage
@@ -26,7 +26,7 @@ const Navbar = () => {
             </a>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 mr-6">
             <Button
               variant="ghost"
               size="icon"
