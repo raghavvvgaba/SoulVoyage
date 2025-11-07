@@ -1467,16 +1467,15 @@ const MainPage = () => {
                       )}
                       
                       {msg.type === "photo" && msg.photoUrl && (
-                        <div className="relative group cursor-pointer">
+                        <div 
+                          className="relative group cursor-pointer"
+                          onClick={() => setFullscreenPhotoUrl(msg.photoUrl || null)}
+                        >
                           <img
                             src={msg.photoUrl}
                             alt="Shared photo"
                             className="rounded-lg max-h-64 max-w-xs object-cover hover:opacity-80 transition-opacity"
-                            onClick={() => setFullscreenPhotoUrl(msg.photoUrl || null)}
                           />
-                          <div className="absolute inset-0 rounded-lg bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                            <span className="text-white text-xs font-semibold bg-black/50 px-2 py-1 rounded">Click to expand</span>
-                          </div>
                           {!isCurrentUser && (
                             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent rounded-b-lg p-2 opacity-0 group-hover:opacity-100 transition-opacity">
                               <p className="text-xs text-white font-semibold">{msg.senderName}</p>
