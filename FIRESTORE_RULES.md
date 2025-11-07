@@ -32,7 +32,10 @@ service cloud.firestore {
     
     // Allow conversations and messages
     match /conversations/{conversationId}/messages/{messageId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if false;
     }
     match /conversations/{conversationId} {
       allow read, write: if true;
@@ -47,5 +50,11 @@ service cloud.firestore {
 - ✅ Anyone can read all user profiles (to search and add friends)
 - ✅ Each user can only write/update their own profile
 - ✅ Users can create/read/update/delete friend requests
-- ✅ Anyone can read/write messages and conversations (for messaging)
+- ✅ Anyone can read/create/update messages (but not delete directly)
 - ✅ Users can create new profiles
+
+## Message Deletion:
+Messages are never directly deleted from Firebase. Instead:
+- **Delete for Me**: Adds current user's ID to `deletedFor` array (user-specific deletion)
+- **Delete for Everyone**: Sets `deletedForEveryone` flag to true (visible deletion for all)
+- Messages with these flags are filtered out client-side before displaying

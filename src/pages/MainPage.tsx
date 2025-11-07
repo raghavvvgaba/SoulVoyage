@@ -67,6 +67,8 @@ interface Message {
   type?: "text" | "photo" | "poll";
   photoUrl?: string;
   poll?: Poll;
+  deletedForEveryone?: boolean;
+  deletedFor?: string[];
 }
 
 interface Server {
@@ -123,6 +125,8 @@ const MainPage = () => {
   const [pollOptions, setPollOptions] = useState(["", ""]);
   const [selectedMessages, setSelectedMessages] = useState<Set<string>>(new Set());
   const [messageContextMenu, setMessageContextMenu] = useState<{ messageId: string; x: number; y: number } | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const currentProfileName = localStorage.getItem("currentProfileName") || "You";
@@ -707,25 +711,74 @@ const MainPage = () => {
     }
   };
 
-  const handleDeleteMessage = async (messageId: string) => {
+  const handleDeleteForMe = async (messageId: string) => {
     try {
       const message = messages.find(m => m.id === messageId);
       if (!message) return;
 
+      const currentProfileId = localStorage.getItem("currentProfileId") || "unknown";
       const conversationId = message.conversationId;
       const messageRef = doc(db, "conversations", conversationId, "messages", messageId);
-      await deleteDoc(messageRef);
+      
+      const deletedFor = message.deletedFor || [];
+      if (!deletedFor.includes(currentProfileId)) {
+        deletedFor.push(currentProfileId);
+      }
+      
+      await updateDoc(messageRef, { deletedFor });
       
       setMessages(messages.filter(m => m.id !== messageId));
       setMessageContextMenu(null);
-      setSelectedMessages(new Set(Array.from(selectedMessages).filter(id => id !== messageId)));
+      setDeleteDialogOpen(false);
+      setMessageToDelete(null);
       
       toast({
         title: "Message Deleted",
-        description: "Message has been removed",
+        description: "Message removed from your view",
       });
     } catch (error) {
-      console.error("Error deleting message:", error);
+      console.error("Error deleting message for me:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete message",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteForEveryone = async (messageId: string) => {
+    try {
+      const message = messages.find(m => m.id === messageId);
+      if (!message) return;
+
+      const currentProfileId = localStorage.getItem("currentProfileId") || "unknown";
+      
+      // Only allow deletion if user is the sender
+      if (message.senderId !== currentProfileId) {
+        toast({
+          title: "Error",
+          description: "You can only delete your own messages",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const conversationId = message.conversationId;
+      const messageRef = doc(db, "conversations", conversationId, "messages", messageId);
+      
+      await updateDoc(messageRef, { deletedForEveryone: true });
+      
+      setMessages(messages.filter(m => m.id !== messageId));
+      setMessageContextMenu(null);
+      setDeleteDialogOpen(false);
+      setMessageToDelete(null);
+      
+      toast({
+        title: "Message Deleted",
+        description: "Message deleted for everyone",
+      });
+    } catch (error) {
+      console.error("Error deleting message for everyone:", error);
       toast({
         title: "Error",
         description: "Failed to delete message",
@@ -740,10 +793,16 @@ const MainPage = () => {
     try {
       for (const messageId of selectedMessages) {
         const message = messages.find(m => m.id === messageId);
-        if (message && message.senderId === currentProfileId) {
+        if (message) {
           const conversationId = message.conversationId;
           const messageRef = doc(db, "conversations", conversationId, "messages", messageId);
-          await deleteDoc(messageRef);
+          
+          const deletedFor = message.deletedFor || [];
+          if (!deletedFor.includes(currentProfileId)) {
+            deletedFor.push(currentProfileId);
+          }
+          
+          await updateDoc(messageRef, { deletedFor });
         }
       }
       
@@ -752,7 +811,7 @@ const MainPage = () => {
       
       toast({
         title: "Messages Deleted",
-        description: `${selectedMessages.size} message(s) have been removed`,
+        description: `${selectedMessages.size} message(s) have been removed from your view`,
       });
     } catch (error) {
       console.error("Error deleting messages:", error);
@@ -1334,7 +1393,15 @@ const MainPage = () => {
               
               const currentUserId = localStorage.getItem("currentProfileId");
               console.log("Current User ID for display:", currentUserId);
-              return conversationMessages.map((msg) => {
+              
+              // Filter out messages deleted for everyone and messages deleted for this user
+              const visibleMessages = conversationMessages.filter(msg => {
+                if (msg.deletedForEveryone) return false;
+                if (msg.deletedFor?.includes(currentUserId || "")) return false;
+                return true;
+              });
+              
+              return visibleMessages.map((msg) => {
                 const isCurrentUser = msg.senderId === currentUserId || msg.senderId === "current-user";
                 const isSelected = selectedMessages.has(msg.id);
                 
@@ -1778,7 +1845,9 @@ const MainPage = () => {
               </button>
               <button
                 onClick={() => {
-                  handleDeleteMessage(messageContextMenu.messageId);
+                  setMessageToDelete(messageContextMenu.messageId);
+                  setDeleteDialogOpen(true);
+                  setMessageContextMenu(null);
                 }}
                 className="w-full px-4 py-2 text-sm hover:bg-destructive/10 flex items-center gap-2 text-destructive"
               >
@@ -1800,6 +1869,50 @@ const MainPage = () => {
           )}
         </div>
       )}
+
+      {/* Delete Message Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Message</DialogTitle>
+            <DialogDescription>
+              Choose how you want to delete this message.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Button
+              onClick={() => {
+                if (messageToDelete) {
+                  handleDeleteForMe(messageToDelete);
+                }
+              }}
+              className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              Delete for Me
+            </Button>
+            <Button
+              onClick={() => {
+                if (messageToDelete) {
+                  handleDeleteForEveryone(messageToDelete);
+                }
+              }}
+              className="w-full bg-destructive hover:bg-destructive/90"
+            >
+              Delete for Everyone
+            </Button>
+            <Button
+              onClick={() => {
+                setDeleteDialogOpen(false);
+                setMessageToDelete(null);
+              }}
+              variant="outline"
+              className="w-full"
+            >
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
 
     </div>
