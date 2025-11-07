@@ -6,7 +6,7 @@ import { ServerCreationDialog } from "@/components/ServerCreationDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { UserPlus, Users, Plus, Send, MessageSquare, ChevronDown, UserCheck, Settings, Layers, Copy, FileText, Image, Video, PieChart, Trash2, CheckSquare } from "lucide-react";
+import { UserPlus, Users, Plus, Send, MessageSquare, ChevronDown, UserCheck, Settings, Layers, Copy, FileText, Image, Video, PieChart, Trash2, CheckSquare, X } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
@@ -127,6 +127,7 @@ const MainPage = () => {
   const [messageContextMenu, setMessageContextMenu] = useState<{ messageId: string; x: number; y: number } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
+  const [fullscreenPhotoUrl, setFullscreenPhotoUrl] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const currentProfileName = localStorage.getItem("currentProfileName") || "You";
@@ -1460,12 +1461,16 @@ const MainPage = () => {
                       )}
                       
                       {msg.type === "photo" && msg.photoUrl && (
-                        <div className="relative group">
+                        <div className="relative group cursor-pointer">
                           <img
                             src={msg.photoUrl}
                             alt="Shared photo"
-                            className="rounded-lg max-h-96 max-w-sm object-cover"
+                            className="rounded-lg max-h-96 max-w-sm object-cover hover:opacity-80 transition-opacity"
+                            onClick={() => setFullscreenPhotoUrl(msg.photoUrl || null)}
                           />
+                          <div className="absolute inset-0 rounded-lg bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                            <span className="text-white text-xs font-semibold bg-black/50 px-2 py-1 rounded">Click to expand</span>
+                          </div>
                           {!isCurrentUser && (
                             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent rounded-b-lg p-2 opacity-0 group-hover:opacity-100 transition-opacity">
                               <p className="text-xs text-white font-semibold">{msg.senderName}</p>
@@ -1913,6 +1918,29 @@ const MainPage = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Fullscreen Photo Viewer */}
+      {fullscreenPhotoUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black flex items-center justify-center"
+          onClick={() => setFullscreenPhotoUrl(null)}
+        >
+          <div className="relative w-full h-full flex items-center justify-center">
+            <img
+              src={fullscreenPhotoUrl}
+              alt="Fullscreen photo"
+              className="max-w-full max-h-full object-contain"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <button
+              onClick={() => setFullscreenPhotoUrl(null)}
+              className="absolute top-4 right-4 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition-colors"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+        </div>
+      )}
 
 
     </div>
