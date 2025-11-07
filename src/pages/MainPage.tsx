@@ -776,7 +776,12 @@ const MainPage = () => {
       
       await updateDoc(messageRef, { deletedForEveryone: true });
       
-      setMessages(messages.filter(m => m.id !== messageId));
+      // Update local state to show the deleted message immediately
+      setMessages(messages.map(m => 
+        m.id === messageId 
+          ? { ...m, deletedForEveryone: true }
+          : m
+      ));
       setMessageContextMenu(null);
       setDeleteDialogOpen(false);
       setMessageToDelete(null);
@@ -1972,7 +1977,12 @@ const MainPage = () => {
                           }
                         }
                         
-                        setMessages(messages.filter(m => !selectedMessages.has(m.id) || m.deletedForEveryone));
+                        // Update local state to show deleted messages immediately
+                        setMessages(messages.map(m =>
+                          selectedMessages.has(m.id)
+                            ? { ...m, deletedForEveryone: true }
+                            : m
+                        ));
                         setSelectedMessages(new Set());
                         setDeleteDialogOpen(false);
                         setIsDeletingBulk(false);
