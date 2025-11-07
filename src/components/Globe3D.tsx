@@ -1,23 +1,43 @@
-import { Globe } from "lucide-react";
+import { useEffect } from "react";
+import { MapService } from "@/services/MapService";
 
 export const Globe3D = () => {
-  return (
-    <div className="w-full h-[500px] flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-blue-900/20 to-cyan-900/20 rounded-lg">
-      {/* Animated rotating globe */}
-      <div className="relative w-64 h-64">
-        <div className="absolute inset-0 rounded-full border-2 border-cyan-500/30 animate-spin" style={{ animationDuration: "20s" }} />
-        <div className="absolute inset-0 rounded-full border border-cyan-400/20 animate-spin" style={{ animationDuration: "30s", animationDirection: "reverse" }} />
-        <div className="absolute inset-0 flex items-center justify-center">
-          <Globe className="w-32 h-32 text-cyan-400 opacity-80 drop-shadow-lg" />
-        </div>
-        
-        {/* Glowing effect */}
-        <div className="absolute inset-0 rounded-full shadow-2xl shadow-cyan-500/50" />
-      </div>
+  useEffect(() => {
+    // Wait for WebGL Earth API to load
+    const initializeMap = () => {
+      if (typeof WE !== 'undefined') {
+        const mapContainer = document.getElementById('earth-map');
+        if (mapContainer) {
+          mapContainer.style.display = 'block';
+          
+          const mapService = new MapService('earth-map');
+          
+          // Add markers for popular server locations
+          mapService.addMarker(37.7749, -122.4194, 'San Francisco - Tech Hub');
+          mapService.addMarker(51.5074, -0.1278, 'London - Urban Explorers');
+          mapService.addMarker(35.6762, 139.6503, 'Tokyo - Asia Community');
+          mapService.addMarker(48.8566, 2.3522, 'Paris - Culture & Art');
+          mapService.addMarker(-33.8688, 151.2093, 'Sydney - Beach Life');
+        }
+      } else {
+        // Retry if WE is not yet defined
+        setTimeout(initializeMap, 500);
+      }
+    };
 
-      {/* Background elements */}
-      <div className="absolute top-10 right-20 w-20 h-20 bg-cyan-400/10 rounded-full blur-3xl" />
-      <div className="absolute bottom-10 left-20 w-32 h-32 bg-blue-400/10 rounded-full blur-3xl" />
+    initializeMap();
+
+    return () => {
+      const mapContainer = document.getElementById('earth-map');
+      if (mapContainer) {
+        mapContainer.style.display = 'none';
+      }
+    };
+  }, []);
+
+  return (
+    <div className="w-full rounded-lg border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
+      {/* WebGL Earth map is rendered here */}
     </div>
   );
 };
