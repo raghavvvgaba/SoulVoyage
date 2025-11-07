@@ -127,6 +127,7 @@ const MainPage = () => {
   const [messageContextMenu, setMessageContextMenu] = useState<{ messageId: string; x: number; y: number } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false);
   const [fullscreenPhotoUrl, setFullscreenPhotoUrl] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -815,6 +816,8 @@ const MainPage = () => {
       
       setMessages(messages.filter(m => !selectedMessages.has(m.id)));
       setSelectedMessages(new Set());
+      setDeleteDialogOpen(false);
+      setIsDeletingBulk(false);
       
       toast({
         title: "Messages Deleted",
@@ -1611,7 +1614,10 @@ const MainPage = () => {
                 <Button
                   size="sm"
                   variant="destructive"
-                  onClick={handleDeleteSelectedMessages}
+                  onClick={() => {
+                    setIsDeletingBulk(true);
+                    setDeleteDialogOpen(true);
+                  }}
                   className="gap-2"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -1887,20 +1893,44 @@ const MainPage = () => {
       )}
 
       {/* Delete Message Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <Dialog 
+        open={deleteDialogOpen} 
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open);
+          if (!open) {
+            setMessageToDelete(null);
+            setIsDeletingBulk(false);
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete Message</DialogTitle>
+            <DialogTitle>Delete {isDeletingBulk ? "Messages" : "Message"}</DialogTitle>
             <DialogDescription>
               {(() => {
-                const message = messageToDelete ? messages.find(m => m.id === messageToDelete) : null;
                 const currentUserId = localStorage.getItem("currentProfileId");
-                const isMessageOwner = message?.senderId === currentUserId;
                 
-                if (isMessageOwner) {
-                  return "Choose how you want to delete this message.";
+                if (isDeletingBulk) {
+                  // Check if all selected messages are owned by current user
+                  const allMessagesOwnedByUser = Array.from(selectedMessages).every(msgId => {
+                    const msg = messages.find(m => m.id === msgId);
+                    return msg?.senderId === currentUserId;
+                  });
+                  
+                  if (allMessagesOwnedByUser) {
+                    return `Choose how you want to delete these ${selectedMessages.size} messages.`;
+                  } else {
+                    return `Delete these ${selectedMessages.size} messages for yourself.`;
+                  }
                 } else {
-                  return "Delete this message for yourself.";
+                  const message = messageToDelete ? messages.find(m => m.id === messageToDelete) : null;
+                  const isMessageOwner = message?.senderId === currentUserId;
+                  
+                  if (isMessageOwner) {
+                    return "Choose how you want to delete this message.";
+                  } else {
+                    return "Delete this message for yourself.";
+                  }
                 }
               })()}
             </DialogDescription>
@@ -1908,7 +1938,9 @@ const MainPage = () => {
           <div className="space-y-4">
             <Button
               onClick={() => {
-                if (messageToDelete) {
+                if (isDeletingBulk) {
+                  handleDeleteSelectedMessages();
+                } else if (messageToDelete) {
                   handleDeleteForMe(messageToDelete);
                 }
               }}
@@ -1917,27 +1949,75 @@ const MainPage = () => {
               Delete for Me
             </Button>
             {(() => {
-              const message = messageToDelete ? messages.find(m => m.id === messageToDelete) : null;
               const currentUserId = localStorage.getItem("currentProfileId");
-              const isMessageOwner = message?.senderId === currentUserId;
               
-              return isMessageOwner && (
-                <Button
-                  onClick={() => {
-                    if (messageToDelete) {
-                      handleDeleteForEveryone(messageToDelete);
-                    }
-                  }}
-                  className="w-full bg-destructive hover:bg-destructive/90"
-                >
-                  Delete for Everyone
-                </Button>
-              );
+              if (isDeletingBulk) {
+                // Check if all selected messages are owned by current user
+                const allMessagesOwnedByUser = Array.from(selectedMessages).every(msgId => {
+                  const msg = messages.find(m => m.id === msgId);
+                  return msg?.senderId === currentUserId;
+                });
+                
+                return allMessagesOwnedByUser && (
+                  <Button
+                    onClick={async () => {
+                      const currentProfileId = localStorage.getItem("currentProfileId") || "unknown";
+                      try {
+                        for (const messageId of selectedMessages) {
+                          const message = messages.find(m => m.id === messageId);
+                          if (message) {
+                            const conversationId = message.conversationId;
+                            const messageRef = doc(db, "conversations", conversationId, "messages", messageId);
+                            await updateDoc(messageRef, { deletedForEveryone: true });
+                          }
+                        }
+                        
+                        setMessages(messages.filter(m => !selectedMessages.has(m.id) || m.deletedForEveryone));
+                        setSelectedMessages(new Set());
+                        setDeleteDialogOpen(false);
+                        setIsDeletingBulk(false);
+                        
+                        toast({
+                          title: "Messages Deleted",
+                          description: `${selectedMessages.size} message(s) deleted for everyone`,
+                        });
+                      } catch (error) {
+                        console.error("Error deleting messages for everyone:", error);
+                        toast({
+                          title: "Error",
+                          description: "Failed to delete messages",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                    className="w-full bg-destructive hover:bg-destructive/90"
+                  >
+                    Delete for Everyone
+                  </Button>
+                );
+              } else {
+                const message = messageToDelete ? messages.find(m => m.id === messageToDelete) : null;
+                const isMessageOwner = message?.senderId === currentUserId;
+                
+                return isMessageOwner && (
+                  <Button
+                    onClick={() => {
+                      if (messageToDelete) {
+                        handleDeleteForEveryone(messageToDelete);
+                      }
+                    }}
+                    className="w-full bg-destructive hover:bg-destructive/90"
+                  >
+                    Delete for Everyone
+                  </Button>
+                );
+              }
             })()}
             <Button
               onClick={() => {
                 setDeleteDialogOpen(false);
                 setMessageToDelete(null);
+                setIsDeletingBulk(false);
               }}
               variant="outline"
               className="w-full"
