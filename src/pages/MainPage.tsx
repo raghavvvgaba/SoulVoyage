@@ -1423,36 +1423,20 @@ const MainPage = () => {
                 return (
                   <div
                     key={msg.id}
-                    onContextMenu={(e) => handleMessageRightClick(e, msg.id)}
-                    onTouchStart={() => {
-                      longPressTimerRef.current = setTimeout(() => {
-                        handleMessageLongPress(msg.id);
-                      }, 500);
-                    }}
-                    onTouchEnd={() => {
-                      if (longPressTimerRef.current) {
-                        clearTimeout(longPressTimerRef.current);
-                        longPressTimerRef.current = null;
-                      }
-                    }}
-                    onTouchMove={() => {
-                      if (longPressTimerRef.current) {
-                        clearTimeout(longPressTimerRef.current);
-                        longPressTimerRef.current = null;
-                      }
-                    }}
-                    onClick={() => handleMessageClick(msg.id)}
                     className={`flex gap-2 ${isCurrentUser ? "justify-end" : "justify-start"} ${
                       isSelected ? "bg-accent/10 rounded-lg px-2 py-1 -mx-2" : ""
                     }`}
                   >
                     {selectedMessages.size > 0 && (
                       <div className="flex items-center pt-1">
-                        <div className={`h-5 w-5 rounded border-2 flex items-center justify-center transition-all ${
-                          isSelected
-                            ? "bg-primary border-primary"
-                            : "border-muted-foreground/30"
-                        }`}>
+                        <div 
+                          className={`h-5 w-5 rounded border-2 flex items-center justify-center transition-all cursor-pointer ${
+                            isSelected
+                              ? "bg-primary border-primary"
+                              : "border-muted-foreground/30"
+                          }`}
+                          onClick={() => handleMessageClick(msg.id)}
+                        >
                           {isSelected && (
                             <span className="text-primary-foreground text-xs">✓</span>
                           )}
@@ -1460,6 +1444,25 @@ const MainPage = () => {
                       </div>
                     )}
                     <div
+                      onContextMenu={(e) => handleMessageRightClick(e, msg.id)}
+                      onTouchStart={() => {
+                        longPressTimerRef.current = setTimeout(() => {
+                          handleMessageLongPress(msg.id);
+                        }, 500);
+                      }}
+                      onTouchEnd={() => {
+                        if (longPressTimerRef.current) {
+                          clearTimeout(longPressTimerRef.current);
+                          longPressTimerRef.current = null;
+                        }
+                      }}
+                      onTouchMove={() => {
+                        if (longPressTimerRef.current) {
+                          clearTimeout(longPressTimerRef.current);
+                          longPressTimerRef.current = null;
+                        }
+                      }}
+                      onClick={() => handleMessageClick(msg.id)}
                       className={`rounded-lg cursor-pointer transition-all ${
                         msg.type === "photo" 
                           ? "p-0"
