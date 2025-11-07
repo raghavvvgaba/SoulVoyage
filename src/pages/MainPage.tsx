@@ -131,6 +131,7 @@ const MainPage = () => {
   const [fullscreenPhotoUrl, setFullscreenPhotoUrl] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const currentProfileName = localStorage.getItem("currentProfileName") || "You";
   const wsRef = useRef<WebSocket | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -188,6 +189,11 @@ const MainPage = () => {
 
   useEffect(() => {
     localStorage.setItem("soulVoyageMessages", JSON.stringify(messages));
+  }, [messages]);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   // Initialize WebSocket connection (for sending messages to server)
@@ -1549,6 +1555,7 @@ const MainPage = () => {
                 );
               });
             })()}
+            <div ref={messagesEndRef} />
           </div>
         </div>
 
