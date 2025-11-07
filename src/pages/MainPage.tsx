@@ -766,12 +766,37 @@ const MainPage = () => {
 
   const handleMessageRightClick = (e: React.MouseEvent, messageId: string) => {
     e.preventDefault();
-    setMessageContextMenu({ messageId, x: e.clientX, y: e.clientY });
+    if (selectedMessages.size > 0) {
+      // If already in selection mode, toggle this message
+      const newSelected = new Set(selectedMessages);
+      if (newSelected.has(messageId)) {
+        newSelected.delete(messageId);
+      } else {
+        newSelected.add(messageId);
+      }
+      setSelectedMessages(newSelected);
+      setMessageContextMenu(null);
+    } else {
+      // Show context menu
+      setMessageContextMenu({ messageId, x: e.clientX, y: e.clientY });
+    }
   };
 
   const handleMessageLongPress = (messageId: string) => {
-    setSelectedMessages(new Set([messageId]));
-    setMessageContextMenu({ messageId, x: 0, y: 0 });
+    const newSelected = new Set(selectedMessages);
+    if (newSelected.has(messageId)) {
+      newSelected.delete(messageId);
+    } else {
+      newSelected.add(messageId);
+    }
+    setSelectedMessages(newSelected);
+    setMessageContextMenu(null);
+  };
+
+  const handleMessageClick = (messageId: string) => {
+    if (selectedMessages.size > 0) {
+      handleMessageLongPress(messageId);
+    }
   };
 
   const clearAllConversations = async () => {
@@ -1334,14 +1359,30 @@ const MainPage = () => {
                         longPressTimerRef.current = null;
                       }
                     }}
-                    className={`flex ${isCurrentUser ? "justify-end" : "justify-start"}`}
+                    onClick={() => handleMessageClick(msg.id)}
+                    className={`flex gap-2 ${isCurrentUser ? "justify-end" : "justify-start"} ${
+                      isSelected ? "bg-accent/10 rounded-lg px-2 py-1 -mx-2" : ""
+                    }`}
                   >
+                    {selectedMessages.size > 0 && (
+                      <div className="flex items-center pt-1">
+                        <div className={`h-5 w-5 rounded border-2 flex items-center justify-center transition-all ${
+                          isSelected
+                            ? "bg-primary border-primary"
+                            : "border-muted-foreground/30"
+                        }`}>
+                          {isSelected && (
+                            <span className="text-primary-foreground text-xs">✓</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     <div
                       className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg cursor-pointer transition-all ${
                         isCurrentUser
                           ? "bg-primary text-primary-foreground"
                           : "bg-accent/20 text-foreground"
-                      } ${isSelected ? "ring-2 ring-offset-2 ring-accent" : ""}`}
+                      }`}
                     >
                       {!isCurrentUser && (
                         <p className="text-xs font-semibold mb-1">{msg.senderName}</p>
@@ -1706,28 +1747,43 @@ const MainPage = () => {
           }}
           onMouseLeave={() => setMessageContextMenu(null)}
         >
-          <button
-            onClick={() => {
-              const message = messages.find(m => m.id === messageContextMenu.messageId);
-              if (message) {
-                setSelectedMessages(new Set([message.id]));
-              }
-              setMessageContextMenu(null);
-            }}
-            className="w-full px-4 py-2 text-sm hover:bg-accent/50 flex items-center gap-2 text-foreground"
-          >
-            <CheckSquare className="h-4 w-4" />
-            Select Message
-          </button>
-          <button
-            onClick={() => {
-              handleDeleteMessage(messageContextMenu.messageId);
-            }}
-            className="w-full px-4 py-2 text-sm hover:bg-destructive/10 flex items-center gap-2 text-destructive"
-          >
-            <Trash2 className="h-4 w-4" />
-            Delete Message
-          </button>
+          {selectedMessages.size === 0 ? (
+            <>
+              <button
+                onClick={() => {
+                  const message = messages.find(m => m.id === messageContextMenu.messageId);
+                  if (message) {
+                    setSelectedMessages(new Set([message.id]));
+                  }
+                  setMessageContextMenu(null);
+                }}
+                className="w-full px-4 py-2 text-sm hover:bg-accent/50 flex items-center gap-2 text-foreground"
+              >
+                <CheckSquare className="h-4 w-4" />
+                Select Messages
+              </button>
+              <button
+                onClick={() => {
+                  handleDeleteMessage(messageContextMenu.messageId);
+                }}
+                className="w-full px-4 py-2 text-sm hover:bg-destructive/10 flex items-center gap-2 text-destructive"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete Message
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => {
+                setSelectedMessages(new Set());
+                setMessageContextMenu(null);
+              }}
+              className="w-full px-4 py-2 text-sm hover:bg-accent/50 flex items-center gap-2 text-foreground"
+            >
+              <span className="h-4 w-4">✕</span>
+              Cancel Selection
+            </button>
+          )}
         </div>
       )}
 
