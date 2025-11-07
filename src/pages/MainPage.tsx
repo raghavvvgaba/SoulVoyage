@@ -1147,6 +1147,7 @@ const MainPage = () => {
         <Button
           variant="ghost"
           size="icon"
+          onClick={() => navigate("/explore")}
           className="w-12 h-12 rounded-2xl bg-card hover:bg-accent hover:rounded-xl transition-all"
         >
           <Globe className="h-6 w-6 text-primary" />

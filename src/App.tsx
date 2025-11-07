@@ -14,6 +14,7 @@ import ServerSettings from "./pages/ServerSettings";
 import EditProfile from "./pages/EditProfile";
 import ChangeProfiles from "./pages/ChangeProfiles";
 import Friends from "./pages/Friends";
+import Explore from "./pages/Explore";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const router = createBrowserRouter(
     { path: "/edit-profile", element: <EditProfile /> },
     { path: "/change-profiles", element: <ChangeProfiles /> },
     { path: "/friends", element: <Friends /> },
+    { path: "/explore", element: <ProtectedRoute element={<Explore />} /> },
     { path: "*", element: <NotFound /> },
   ],
   {
