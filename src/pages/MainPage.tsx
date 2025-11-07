@@ -1462,70 +1462,76 @@ const MainPage = () => {
                             }`
                       }`}
                     >
-                      {!isCurrentUser && msg.type !== "photo" && (
+                      {!isCurrentUser && msg.type !== "photo" && msg.type !== "poll" && !msg.deletedForEveryone && (
                         <p className="text-xs font-semibold mb-1">{msg.senderName}</p>
                       )}
                       
-                      {msg.type === "photo" && msg.photoUrl && (
-                        <div 
-                          className="relative group cursor-pointer"
-                          onClick={() => setFullscreenPhotoUrl(msg.photoUrl || null)}
-                        >
-                          <img
-                            src={msg.photoUrl}
-                            alt="Shared photo"
-                            className="rounded-lg max-h-64 max-w-xs object-cover hover:opacity-80 transition-opacity"
-                          />
-                          {!isCurrentUser && (
-                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent rounded-b-lg p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <p className="text-xs text-white font-semibold">{msg.senderName}</p>
+                      {msg.deletedForEveryone ? (
+                        <p className="italic text-muted-foreground text-sm">This message was deleted</p>
+                      ) : (
+                        <>
+                          {msg.type === "photo" && msg.photoUrl && (
+                            <div 
+                              className="relative group cursor-pointer"
+                              onClick={() => setFullscreenPhotoUrl(msg.photoUrl || null)}
+                            >
+                              <img
+                                src={msg.photoUrl}
+                                alt="Shared photo"
+                                className="rounded-lg max-h-64 max-w-xs object-cover hover:opacity-80 transition-opacity"
+                              />
+                              {!isCurrentUser && (
+                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent rounded-b-lg p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <p className="text-xs text-white font-semibold">{msg.senderName}</p>
+                                </div>
+                              )}
                             </div>
                           )}
-                        </div>
-                      )}
-                      
-                      {msg.type === "poll" && msg.poll && (
-                        <div className="space-y-2">
-                          {!isCurrentUser && (
-                            <p className="text-xs font-semibold mb-2">{msg.senderName}</p>
+                          
+                          {msg.type === "poll" && msg.poll && (
+                            <div className="space-y-2">
+                              {!isCurrentUser && (
+                                <p className="text-xs font-semibold mb-2">{msg.senderName}</p>
+                              )}
+                              <p className="font-semibold">{msg.poll.title}</p>
+                              <div className="space-y-2">
+                                {msg.poll.options.map((option) => {
+                                  const totalVotes = msg.poll.options.reduce((sum, opt) => sum + opt.votes.length, 0);
+                                  const optionVotes = option.votes.length;
+                                  const percentage = totalVotes > 0 ? (optionVotes / totalVotes) * 100 : 0;
+                                  const hasVoted = option.votes.includes(currentUserId || "");
+                                  
+                                  return (
+                                    <button
+                                      key={option.id}
+                                      onClick={() => handleVotePoll(msg.id, option.id)}
+                                      className={`w-full text-left p-2 rounded transition-all ${
+                                        hasVoted
+                                          ? "bg-accent/40 border border-accent"
+                                          : "bg-accent/20 border border-transparent hover:border-accent/50"
+                                      }`}
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-sm">{option.text}</span>
+                                        <span className="text-xs">{optionVotes}</span>
+                                      </div>
+                                      <div className="h-1 bg-accent/20 rounded mt-1 overflow-hidden">
+                                        <div
+                                          className="h-full bg-accent transition-all"
+                                          style={{ width: `${percentage}%` }}
+                                        />
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
                           )}
-                          <p className="font-semibold">{msg.poll.title}</p>
-                          <div className="space-y-2">
-                            {msg.poll.options.map((option) => {
-                              const totalVotes = msg.poll.options.reduce((sum, opt) => sum + opt.votes.length, 0);
-                              const optionVotes = option.votes.length;
-                              const percentage = totalVotes > 0 ? (optionVotes / totalVotes) * 100 : 0;
-                              const hasVoted = option.votes.includes(currentUserId || "");
-                              
-                              return (
-                                <button
-                                  key={option.id}
-                                  onClick={() => handleVotePoll(msg.id, option.id)}
-                                  className={`w-full text-left p-2 rounded transition-all ${
-                                    hasVoted
-                                      ? "bg-accent/40 border border-accent"
-                                      : "bg-accent/20 border border-transparent hover:border-accent/50"
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-sm">{option.text}</span>
-                                    <span className="text-xs">{optionVotes}</span>
-                                  </div>
-                                  <div className="h-1 bg-accent/20 rounded mt-1 overflow-hidden">
-                                    <div
-                                      className="h-full bg-accent transition-all"
-                                      style={{ width: `${percentage}%` }}
-                                    />
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                      
-                      {msg.type !== "photo" && msg.type !== "poll" && (
-                        <p className="break-words">{msg.content}</p>
+                          
+                          {msg.type !== "photo" && msg.type !== "poll" && (
+                            <p className="break-words">{msg.content}</p>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
