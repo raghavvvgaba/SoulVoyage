@@ -1378,26 +1378,40 @@ const MainPage = () => {
                       </div>
                     )}
                     <div
-                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg cursor-pointer transition-all ${
-                        isCurrentUser
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-accent/20 text-foreground"
+                      className={`rounded-lg cursor-pointer transition-all ${
+                        msg.type === "photo" 
+                          ? "p-0"
+                          : `px-4 py-2 ${
+                              isCurrentUser
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-accent/20 text-foreground"
+                            }`
                       }`}
                     >
-                      {!isCurrentUser && (
+                      {!isCurrentUser && msg.type !== "photo" && (
                         <p className="text-xs font-semibold mb-1">{msg.senderName}</p>
                       )}
                       
                       {msg.type === "photo" && msg.photoUrl && (
-                        <img
-                          src={msg.photoUrl}
-                          alt="Shared photo"
-                          className="rounded max-h-64 max-w-xs mb-2"
-                        />
+                        <div className="relative group">
+                          <img
+                            src={msg.photoUrl}
+                            alt="Shared photo"
+                            className="rounded-lg max-h-96 max-w-sm object-cover"
+                          />
+                          {!isCurrentUser && (
+                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent rounded-b-lg p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <p className="text-xs text-white font-semibold">{msg.senderName}</p>
+                            </div>
+                          )}
+                        </div>
                       )}
                       
                       {msg.type === "poll" && msg.poll && (
                         <div className="space-y-2">
+                          {!isCurrentUser && (
+                            <p className="text-xs font-semibold mb-2">{msg.senderName}</p>
+                          )}
                           <p className="font-semibold">{msg.poll.title}</p>
                           <div className="space-y-2">
                             {msg.poll.options.map((option) => {
