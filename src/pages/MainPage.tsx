@@ -1892,7 +1892,17 @@ const MainPage = () => {
           <DialogHeader>
             <DialogTitle>Delete Message</DialogTitle>
             <DialogDescription>
-              Choose how you want to delete this message.
+              {(() => {
+                const message = messageToDelete ? messages.find(m => m.id === messageToDelete) : null;
+                const currentUserId = localStorage.getItem("currentProfileId");
+                const isMessageOwner = message?.senderId === currentUserId;
+                
+                if (isMessageOwner) {
+                  return "Choose how you want to delete this message.";
+                } else {
+                  return "Delete this message for yourself.";
+                }
+              })()}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -1906,16 +1916,24 @@ const MainPage = () => {
             >
               Delete for Me
             </Button>
-            <Button
-              onClick={() => {
-                if (messageToDelete) {
-                  handleDeleteForEveryone(messageToDelete);
-                }
-              }}
-              className="w-full bg-destructive hover:bg-destructive/90"
-            >
-              Delete for Everyone
-            </Button>
+            {(() => {
+              const message = messageToDelete ? messages.find(m => m.id === messageToDelete) : null;
+              const currentUserId = localStorage.getItem("currentProfileId");
+              const isMessageOwner = message?.senderId === currentUserId;
+              
+              return isMessageOwner && (
+                <Button
+                  onClick={() => {
+                    if (messageToDelete) {
+                      handleDeleteForEveryone(messageToDelete);
+                    }
+                  }}
+                  className="w-full bg-destructive hover:bg-destructive/90"
+                >
+                  Delete for Everyone
+                </Button>
+              );
+            })()}
             <Button
               onClick={() => {
                 setDeleteDialogOpen(false);
