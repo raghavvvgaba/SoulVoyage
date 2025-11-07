@@ -1359,7 +1359,7 @@ const MainPage = () => {
 
         {/* Main Content */}
         <div className="flex-1 flex flex-col overflow-hidden" onClick={() => setMessageContextMenu(null)}>
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 pr-2 flex flex-col">
             {(() => {
               let conversationId = "";
               
@@ -1423,7 +1423,7 @@ const MainPage = () => {
                 return (
                   <div
                     key={msg.id}
-                    className={`flex gap-2 ${isCurrentUser ? "justify-end" : "justify-start"} ${
+                    className={`flex gap-2 ${isCurrentUser ? "justify-end" : "justify-start"} max-w-full ${
                       isSelected ? "bg-accent/10 rounded-lg px-2 py-1 -mx-2" : ""
                     }`}
                   >
@@ -1463,7 +1463,7 @@ const MainPage = () => {
                         }
                       }}
                       onClick={() => handleMessageClick(msg.id)}
-                      className={`rounded-lg cursor-pointer transition-all ${
+                      className={`rounded-lg cursor-pointer transition-all max-w-xs ${
                         msg.type === "photo" 
                           ? "p-0"
                           : `px-4 py-2 ${
