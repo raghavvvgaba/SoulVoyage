@@ -326,14 +326,20 @@ const MainPage = () => {
       unsubscribeRef.current = onSnapshot(q, (snapshot) => {
         console.log("Messages snapshot received:", snapshot.docs.length, "messages");
         const firestoreMessages = snapshot.docs.map((doc) => {
-          console.log("Message:", doc.data());
+          const data = doc.data();
+          console.log("Message:", data);
           return {
             id: doc.id,
-            senderId: doc.data().senderId,
-            senderName: doc.data().senderName,
-            content: doc.data().content,
-            timestamp: doc.data().timestamp,
-            conversationId: doc.data().conversationId,
+            senderId: data.senderId,
+            senderName: data.senderName,
+            content: data.content,
+            timestamp: data.timestamp,
+            conversationId: data.conversationId,
+            type: data.type,
+            photoUrl: data.photoUrl,
+            poll: data.poll,
+            deletedForEveryone: data.deletedForEveryone,
+            deletedFor: data.deletedFor,
           };
         });
         console.log("Setting messages state:", firestoreMessages.length, "messages");
