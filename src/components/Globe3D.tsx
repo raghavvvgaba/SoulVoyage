@@ -1,76 +1,23 @@
-import { useRef, useEffect } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
-import * as THREE from "three";
-
-const GlobeMesh = () => {
-  const meshRef = useRef<THREE.Mesh>(null);
-
-  useFrame(() => {
-    if (meshRef.current) {
-      meshRef.current.rotation.y += 0.0005;
-    }
-  });
-
-  useEffect(() => {
-    if (meshRef.current) {
-      const canvas = document.createElement("canvas");
-      canvas.width = 1024;
-      canvas.height = 512;
-      const ctx = canvas.getContext("2d");
-      
-      if (ctx) {
-        // Sky blue background
-        ctx.fillStyle = "#1a5a7a";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Draw continents (simplified)
-        ctx.fillStyle = "#2d5016";
-        
-        // North America
-        ctx.fillRect(50, 150, 120, 100);
-        // South America
-        ctx.fillRect(120, 250, 80, 100);
-        // Europe
-        ctx.fillRect(350, 100, 100, 80);
-        // Africa
-        ctx.fillRect(400, 180, 120, 150);
-        // Asia
-        ctx.fillRect(500, 120, 200, 120);
-        // Australia
-        ctx.fillRect(700, 300, 80, 60);
-
-        const texture = new THREE.CanvasTexture(canvas);
-        if (meshRef.current && meshRef.current.material) {
-          (meshRef.current.material as THREE.Material).map = texture;
-          (meshRef.current.material as THREE.Material).needsUpdate = true;
-        }
-      }
-    }
-  }, []);
-
-  return (
-    <mesh ref={meshRef} scale={2.5}>
-      <sphereGeometry args={[1, 64, 64]} />
-      <meshPhongMaterial color="#ffffff" emissive="#111111" />
-    </mesh>
-  );
-};
+import { Globe } from "lucide-react";
 
 export const Globe3D = () => {
   return (
-    <div className="w-full h-[500px]">
-      <Canvas camera={{ position: [0, 0, 3], fov: 45 }}>
-        <ambientLight intensity={0.5} />
-        <pointLight position={[10, 10, 10]} intensity={1} />
-        <GlobeMesh />
-        <OrbitControls
-          autoRotate
-          autoRotateSpeed={2}
-          enableZoom={true}
-          enablePan={true}
-        />
-      </Canvas>
+    <div className="w-full h-[500px] flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-blue-900/20 to-cyan-900/20 rounded-lg">
+      {/* Animated rotating globe */}
+      <div className="relative w-64 h-64">
+        <div className="absolute inset-0 rounded-full border-2 border-cyan-500/30 animate-spin" style={{ animationDuration: "20s" }} />
+        <div className="absolute inset-0 rounded-full border border-cyan-400/20 animate-spin" style={{ animationDuration: "30s", animationDirection: "reverse" }} />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Globe className="w-32 h-32 text-cyan-400 opacity-80 drop-shadow-lg" />
+        </div>
+        
+        {/* Glowing effect */}
+        <div className="absolute inset-0 rounded-full shadow-2xl shadow-cyan-500/50" />
+      </div>
+
+      {/* Background elements */}
+      <div className="absolute top-10 right-20 w-20 h-20 bg-cyan-400/10 rounded-full blur-3xl" />
+      <div className="absolute bottom-10 left-20 w-32 h-32 bg-blue-400/10 rounded-full blur-3xl" />
     </div>
   );
 };
