@@ -1851,10 +1851,12 @@ const MainPage = () => {
       {/* Message Context Menu */}
       {messageContextMenu && (
         <div
-          className="fixed z-50 bg-card border border-border rounded-lg shadow-lg py-1"
+          className="fixed z-50 bg-card border border-border rounded-lg shadow-lg py-1 min-w-fit"
           style={{
-            top: `${messageContextMenu.y}px`,
-            left: `${messageContextMenu.x}px`,
+            top: Math.min(messageContextMenu.y, window.innerHeight - 150) + 'px',
+            left: Math.min(messageContextMenu.x, window.innerWidth - 200) + 'px',
+            maxHeight: '200px',
+            overflowY: 'auto',
           }}
           onMouseLeave={() => setMessageContextMenu(null)}
         >
