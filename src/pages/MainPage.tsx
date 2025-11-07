@@ -1467,7 +1467,7 @@ const MainPage = () => {
                       )}
                       
                       {msg.deletedForEveryone ? (
-                        <p className="italic text-muted-foreground text-sm">This message was deleted</p>
+                        <p className="italic text-muted-foreground text-sm">This message was deleted by the user</p>
                       ) : (
                         <>
                           {msg.type === "photo" && msg.photoUrl && (
