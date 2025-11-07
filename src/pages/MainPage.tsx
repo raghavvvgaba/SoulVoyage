@@ -6,7 +6,7 @@ import { ServerCreationDialog } from "@/components/ServerCreationDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { UserPlus, Users, Plus, Send, MessageSquare, ChevronDown, UserCheck, Settings, Layers, Copy, FileText, Image, Video, PieChart } from "lucide-react";
+import { UserPlus, Users, Plus, Send, MessageSquare, ChevronDown, UserCheck, Settings, Layers, Copy, FileText, Image, Video, PieChart, Trash2, CheckSquare } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
@@ -44,6 +44,19 @@ interface FriendRequest {
   fromUserName?: string;
 }
 
+interface PollOption {
+  id: string;
+  text: string;
+  votes: string[];
+}
+
+interface Poll {
+  id: string;
+  title: string;
+  options: PollOption[];
+  createdBy: string;
+}
+
 interface Message {
   id: string;
   senderId: string;
@@ -51,6 +64,9 @@ interface Message {
   content: string;
   timestamp: number;
   conversationId: string;
+  type?: "text" | "photo" | "poll";
+  photoUrl?: string;
+  poll?: Poll;
 }
 
 interface Server {
@@ -102,34 +118,18 @@ const MainPage = () => {
     const saved = localStorage.getItem("soulVoyageMessages");
     return saved ? JSON.parse(saved) : [];
   });
+  const [showPollDialog, setShowPollDialog] = useState(false);
+  const [pollTitle, setPollTitle] = useState("");
+  const [pollOptions, setPollOptions] = useState(["", ""]);
+  const [selectedMessages, setSelectedMessages] = useState<Set<string>>(new Set());
+  const [messageContextMenu, setMessageContextMenu] = useState<{ messageId: string; x: number; y: number } | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const currentProfileName = localStorage.getItem("currentProfileName") || "You";
   const wsRef = useRef<WebSocket | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
-  const defaultServers: Server[] = [
-    { 
-      id: "1", 
-      name: "Travel Enthusiasts",
-      icon: undefined,
-      categories: [
-        { id: "cat_1", name: "TEXT MESSAGES" }
-      ],
-      channels: [
-        { id: "1", name: "general", type: "text", categoryId: "cat_1" },
-      ]
-    },
-    { 
-      id: "2", 
-      name: "Adventure Club",
-      icon: undefined,
-      categories: [
-        { id: "cat_1", name: "TEXT MESSAGES" }
-      ],
-      channels: [
-        { id: "1", name: "general", type: "text", categoryId: "cat_1" },
-      ]
-    },
-  ];
+  const defaultServers: Server[] = [];
 
   const ensureServerHasCategories = (server: Server): Server => {
     if (!server.categories || server.categories.length === 0) {
@@ -154,6 +154,29 @@ const MainPage = () => {
   useEffect(() => {
     localStorage.setItem("soulVoyageFriends", JSON.stringify(friends));
   }, [friends]);
+
+  // Clean up default servers for existing users (one-time migration)
+  useEffect(() => {
+    const migrationDone = localStorage.getItem("defaultServersMigrated");
+    if (!migrationDone) {
+      try {
+        const savedServers = localStorage.getItem("soulVoyageServers");
+        if (savedServers) {
+          const parsed = JSON.parse(savedServers);
+          // Filter out the default servers (Travel Enthusiasts and Adventure Club)
+          const filtered = parsed.filter((s: Server) => 
+            s.id !== "1" && s.id !== "2" && 
+            s.name !== "Travel Enthusiasts" && 
+            s.name !== "Adventure Club"
+          );
+          localStorage.setItem("soulVoyageServers", JSON.stringify(filtered));
+        }
+        localStorage.setItem("defaultServersMigrated", "true");
+      } catch (error) {
+        console.error("Error migrating servers:", error);
+      }
+    }
+  }, []);
 
 
 
@@ -518,6 +541,237 @@ const MainPage = () => {
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files[0]) {
+      const file = files[0];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const photoUrl = event.target?.result as string;
+        handleSendPhotoMessage(photoUrl);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSendPhotoMessage = async (photoUrl: string) => {
+    let conversationId = "";
+    
+    if (showDirectMessages && selectedFriend) {
+      conversationId = getConversationId(selectedFriend.id);
+    } else if (!showDirectMessages && selectedChannel) {
+      conversationId = selectedChannel;
+    }
+    
+    if (!conversationId) return;
+
+    const currentProfileId = localStorage.getItem("currentProfileId") || "unknown";
+    const newMessage: Message = {
+      id: Date.now().toString(),
+      senderId: currentProfileId,
+      senderName: currentProfileName,
+      content: "📷 Shared a photo",
+      timestamp: Date.now(),
+      conversationId,
+      type: "photo",
+      photoUrl,
+    };
+    
+    try {
+      const messagesRef = collection(db, "conversations", conversationId, "messages");
+      await addDoc(messagesRef, {
+        ...newMessage,
+        timestamp: Timestamp.now(),
+      });
+      toast({
+        title: "Photo Sent",
+        description: "Your photo has been shared",
+      });
+    } catch (error) {
+      console.error("Error sending photo:", error);
+      toast({
+        title: "Error",
+        description: "Failed to send photo",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCreatePoll = async () => {
+    if (!pollTitle.trim() || pollOptions.some(opt => !opt.trim())) {
+      toast({
+        title: "Error",
+        description: "Poll title and all options must be filled",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    let conversationId = "";
+    
+    if (showDirectMessages && selectedFriend) {
+      conversationId = getConversationId(selectedFriend.id);
+    } else if (!showDirectMessages && selectedChannel) {
+      conversationId = selectedChannel;
+    }
+    
+    if (!conversationId) return;
+
+    const currentProfileId = localStorage.getItem("currentProfileId") || "unknown";
+    const newPoll: Poll = {
+      id: Date.now().toString(),
+      title: pollTitle,
+      options: pollOptions.map((text, idx) => ({
+        id: `opt_${idx}`,
+        text,
+        votes: [],
+      })),
+      createdBy: currentProfileId,
+    };
+
+    const newMessage: Message = {
+      id: Date.now().toString(),
+      senderId: currentProfileId,
+      senderName: currentProfileName,
+      content: `📊 Created a poll: ${pollTitle}`,
+      timestamp: Date.now(),
+      conversationId,
+      type: "poll",
+      poll: newPoll,
+    };
+    
+    try {
+      const messagesRef = collection(db, "conversations", conversationId, "messages");
+      await addDoc(messagesRef, {
+        ...newMessage,
+        timestamp: Timestamp.now(),
+      });
+      setPollTitle("");
+      setPollOptions(["", ""]);
+      setShowPollDialog(false);
+      toast({
+        title: "Poll Created",
+        description: "Your poll has been shared",
+      });
+    } catch (error) {
+      console.error("Error creating poll:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create poll",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleVotePoll = async (messageId: string, pollOptionId: string) => {
+    const message = messages.find(m => m.id === messageId);
+    if (!message || !message.poll) return;
+
+    const currentProfileId = localStorage.getItem("currentProfileId") || "unknown";
+    const pollOptionIndex = message.poll.options.findIndex(opt => opt.id === pollOptionId);
+    
+    if (pollOptionIndex === -1) return;
+
+    // Remove vote if already voted on this option
+    const alreadyVoted = message.poll.options[pollOptionIndex].votes.includes(currentProfileId);
+    
+    const updatedPoll = {
+      ...message.poll,
+      options: message.poll.options.map((opt, idx) => ({
+        ...opt,
+        votes: idx === pollOptionIndex
+          ? alreadyVoted 
+            ? opt.votes.filter(v => v !== currentProfileId)
+            : [...opt.votes, currentProfileId]
+          : opt.votes,
+      })),
+    };
+
+    const updatedMessage = { ...message, poll: updatedPoll };
+
+    try {
+      const conversationId = message.conversationId;
+      const messageRef = doc(db, "conversations", conversationId, "messages", messageId);
+      await updateDoc(messageRef, { poll: updatedPoll });
+      
+      setMessages(messages.map(m => m.id === messageId ? updatedMessage : m));
+    } catch (error) {
+      console.error("Error voting on poll:", error);
+      toast({
+        title: "Error",
+        description: "Failed to vote on poll",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    try {
+      const message = messages.find(m => m.id === messageId);
+      if (!message) return;
+
+      const conversationId = message.conversationId;
+      const messageRef = doc(db, "conversations", conversationId, "messages", messageId);
+      await deleteDoc(messageRef);
+      
+      setMessages(messages.filter(m => m.id !== messageId));
+      setMessageContextMenu(null);
+      setSelectedMessages(new Set(Array.from(selectedMessages).filter(id => id !== messageId)));
+      
+      toast({
+        title: "Message Deleted",
+        description: "Message has been removed",
+      });
+    } catch (error) {
+      console.error("Error deleting message:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete message",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteSelectedMessages = async () => {
+    const currentProfileId = localStorage.getItem("currentProfileId") || "unknown";
+    
+    try {
+      for (const messageId of selectedMessages) {
+        const message = messages.find(m => m.id === messageId);
+        if (message && message.senderId === currentProfileId) {
+          const conversationId = message.conversationId;
+          const messageRef = doc(db, "conversations", conversationId, "messages", messageId);
+          await deleteDoc(messageRef);
+        }
+      }
+      
+      setMessages(messages.filter(m => !selectedMessages.has(m.id)));
+      setSelectedMessages(new Set());
+      
+      toast({
+        title: "Messages Deleted",
+        description: `${selectedMessages.size} message(s) have been removed`,
+      });
+    } catch (error) {
+      console.error("Error deleting messages:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete messages",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleMessageRightClick = (e: React.MouseEvent, messageId: string) => {
+    e.preventDefault();
+    setMessageContextMenu({ messageId, x: e.clientX, y: e.clientY });
+  };
+
+  const handleMessageLongPress = (messageId: string) => {
+    setSelectedMessages(new Set([messageId]));
+    setMessageContextMenu({ messageId, x: 0, y: 0 });
   };
 
   const clearAllConversations = async () => {
@@ -1005,7 +1259,7 @@ const MainPage = () => {
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 flex flex-col overflow-hidden" onClick={() => setMessageContextMenu(null)}>
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {(() => {
               let conversationId = "";
@@ -1056,20 +1310,91 @@ const MainPage = () => {
               const currentUserId = localStorage.getItem("currentProfileId");
               console.log("Current User ID for display:", currentUserId);
               return conversationMessages.map((msg) => {
-                // Handle both old format (senderId: "current-user") and new format (actual user ID)
                 const isCurrentUser = msg.senderId === currentUserId || msg.senderId === "current-user";
-                console.log("Message senderId:", msg.senderId, "Current User ID:", currentUserId, "Match:", isCurrentUser);
+                const isSelected = selectedMessages.has(msg.id);
+                
                 return (
-                  <div key={msg.id} className={`flex ${isCurrentUser ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                      isCurrentUser
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-accent/20 text-foreground"
-                    }`}>
+                  <div
+                    key={msg.id}
+                    onContextMenu={(e) => handleMessageRightClick(e, msg.id)}
+                    onTouchStart={() => {
+                      longPressTimerRef.current = setTimeout(() => {
+                        handleMessageLongPress(msg.id);
+                      }, 500);
+                    }}
+                    onTouchEnd={() => {
+                      if (longPressTimerRef.current) {
+                        clearTimeout(longPressTimerRef.current);
+                        longPressTimerRef.current = null;
+                      }
+                    }}
+                    onTouchMove={() => {
+                      if (longPressTimerRef.current) {
+                        clearTimeout(longPressTimerRef.current);
+                        longPressTimerRef.current = null;
+                      }
+                    }}
+                    className={`flex ${isCurrentUser ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg cursor-pointer transition-all ${
+                        isCurrentUser
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-accent/20 text-foreground"
+                      } ${isSelected ? "ring-2 ring-offset-2 ring-accent" : ""}`}
+                    >
                       {!isCurrentUser && (
                         <p className="text-xs font-semibold mb-1">{msg.senderName}</p>
                       )}
-                      <p className="break-words">{msg.content}</p>
+                      
+                      {msg.type === "photo" && msg.photoUrl && (
+                        <img
+                          src={msg.photoUrl}
+                          alt="Shared photo"
+                          className="rounded max-h-64 max-w-xs mb-2"
+                        />
+                      )}
+                      
+                      {msg.type === "poll" && msg.poll && (
+                        <div className="space-y-2">
+                          <p className="font-semibold">{msg.poll.title}</p>
+                          <div className="space-y-2">
+                            {msg.poll.options.map((option) => {
+                              const totalVotes = msg.poll.options.reduce((sum, opt) => sum + opt.votes.length, 0);
+                              const optionVotes = option.votes.length;
+                              const percentage = totalVotes > 0 ? (optionVotes / totalVotes) * 100 : 0;
+                              const hasVoted = option.votes.includes(currentUserId || "");
+                              
+                              return (
+                                <button
+                                  key={option.id}
+                                  onClick={() => handleVotePoll(msg.id, option.id)}
+                                  className={`w-full text-left p-2 rounded transition-all ${
+                                    hasVoted
+                                      ? "bg-accent/40 border border-accent"
+                                      : "bg-accent/20 border border-transparent hover:border-accent/50"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-sm">{option.text}</span>
+                                    <span className="text-xs">{optionVotes}</span>
+                                  </div>
+                                  <div className="h-1 bg-accent/20 rounded mt-1 overflow-hidden">
+                                    <div
+                                      className="h-full bg-accent transition-all"
+                                      style={{ width: `${percentage}%` }}
+                                    />
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {msg.type !== "photo" && msg.type !== "poll" && (
+                        <p className="break-words">{msg.content}</p>
+                      )}
                     </div>
                   </div>
                 );
@@ -1082,6 +1407,13 @@ const MainPage = () => {
         {((showDirectMessages && selectedFriend) || (!showDirectMessages && selectedChannel)) && (
           <div className="p-4 border-t border-border bg-card/30 backdrop-blur-sm">
             <div className="flex items-center gap-2">
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoUpload}
+                className="hidden"
+              />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -1097,7 +1429,10 @@ const MainPage = () => {
                     <FileText className="h-4 w-4" />
                     <span>Files</span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem className="gap-2 cursor-pointer">
+                  <DropdownMenuItem 
+                    className="gap-2 cursor-pointer"
+                    onClick={() => photoInputRef.current?.click()}
+                  >
                     <Image className="h-4 w-4" />
                     <span>Photos</span>
                   </DropdownMenuItem>
@@ -1105,7 +1440,10 @@ const MainPage = () => {
                     <Video className="h-4 w-4" />
                     <span>Videos</span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem className="gap-2 cursor-pointer">
+                  <DropdownMenuItem 
+                    className="gap-2 cursor-pointer"
+                    onClick={() => setShowPollDialog(true)}
+                  >
                     <PieChart className="h-4 w-4" />
                     <span>Poll</span>
                   </DropdownMenuItem>
@@ -1129,6 +1467,20 @@ const MainPage = () => {
                 <Send className="h-5 w-5" />
               </Button>
             </div>
+            {selectedMessages.size > 0 && (
+              <div className="mt-3 flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">{selectedMessages.size} message(s) selected</span>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={handleDeleteSelectedMessages}
+                  className="gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete Selected
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1288,6 +1640,96 @@ const MainPage = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Poll Creation Dialog */}
+      <Dialog open={showPollDialog} onOpenChange={setShowPollDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create a Poll</DialogTitle>
+            <DialogDescription>
+              Create a poll and let others vote on options.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="poll-title">Poll Title</Label>
+              <Input
+                id="poll-title"
+                placeholder="What's your question?"
+                value={pollTitle}
+                onChange={(e) => setPollTitle(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Options</Label>
+              {pollOptions.map((option, idx) => (
+                <Input
+                  key={idx}
+                  placeholder={`Option ${idx + 1}`}
+                  value={option}
+                  onChange={(e) => {
+                    const newOptions = [...pollOptions];
+                    newOptions[idx] = e.target.value;
+                    setPollOptions(newOptions);
+                  }}
+                />
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPollOptions([...pollOptions, ""])}
+                className="w-full gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                Add Option
+              </Button>
+            </div>
+
+            <Button
+              onClick={handleCreatePoll}
+              className="w-full bg-primary hover:bg-primary/90"
+            >
+              Create Poll
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Message Context Menu */}
+      {messageContextMenu && (
+        <div
+          className="fixed z-50 bg-card border border-border rounded-lg shadow-lg py-1"
+          style={{
+            top: `${messageContextMenu.y}px`,
+            left: `${messageContextMenu.x}px`,
+          }}
+          onMouseLeave={() => setMessageContextMenu(null)}
+        >
+          <button
+            onClick={() => {
+              const message = messages.find(m => m.id === messageContextMenu.messageId);
+              if (message) {
+                setSelectedMessages(new Set([message.id]));
+              }
+              setMessageContextMenu(null);
+            }}
+            className="w-full px-4 py-2 text-sm hover:bg-accent/50 flex items-center gap-2 text-foreground"
+          >
+            <CheckSquare className="h-4 w-4" />
+            Select Message
+          </button>
+          <button
+            onClick={() => {
+              handleDeleteMessage(messageContextMenu.messageId);
+            }}
+            className="w-full px-4 py-2 text-sm hover:bg-destructive/10 flex items-center gap-2 text-destructive"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete Message
+          </button>
+        </div>
+      )}
 
 
     </div>

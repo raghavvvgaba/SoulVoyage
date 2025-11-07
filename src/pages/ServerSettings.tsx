@@ -45,22 +45,7 @@ const ServerSettings = () => {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const defaultServers: Server[] = [
-    {
-      id: "1",
-      name: "Travel Enthusiasts",
-      icon: undefined,
-      categories: [{ id: "cat_1", name: "TEXT MESSAGES" }],
-      channels: [{ id: "1", name: "general", type: "text", categoryId: "cat_1" }],
-    },
-    {
-      id: "2",
-      name: "Adventure Club",
-      icon: undefined,
-      categories: [{ id: "cat_1", name: "TEXT MESSAGES" }],
-      channels: [{ id: "1", name: "general", type: "text", categoryId: "cat_1" }],
-    },
-  ];
+  const defaultServers: Server[] = [];
 
   const [servers, setServers] = useState<Server[]>(() => {
     const savedServers = localStorage.getItem("soulVoyageServers");
