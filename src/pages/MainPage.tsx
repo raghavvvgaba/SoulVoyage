@@ -1471,7 +1471,7 @@ const MainPage = () => {
                           <img
                             src={msg.photoUrl}
                             alt="Shared photo"
-                            className="rounded-lg max-h-96 max-w-sm object-cover hover:opacity-80 transition-opacity"
+                            className="rounded-lg max-h-64 max-w-xs object-cover hover:opacity-80 transition-opacity"
                             onClick={() => setFullscreenPhotoUrl(msg.photoUrl || null)}
                           />
                           <div className="absolute inset-0 rounded-lg bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
