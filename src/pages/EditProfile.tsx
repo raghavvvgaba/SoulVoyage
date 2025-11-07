@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Copy, Check } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ProfileMenu } from "@/components/ProfileMenu";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,8 @@ import { useToast } from "@/hooks/use-toast";
 const EditProfile = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [userId, setUserId] = useState("");
+  const [copied, setCopied] = useState(false);
   
   const [formData, setFormData] = useState({
     name: "",
@@ -22,6 +24,54 @@ const EditProfile = () => {
     location: "",
     phone: "",
   });
+
+  useEffect(() => {
+    const currentProfileId = localStorage.getItem("currentProfileId");
+    const profiles = JSON.parse(localStorage.getItem("profiles") || "[]");
+    const profile = profiles.find((p: any) => p.id === currentProfileId);
+    
+    if (profile) {
+      setUserId(profile.userId || profile.id);
+      setFormData({
+        name: profile.name || "",
+        email: profile.email || "",
+        bio: "",
+        location: "",
+        phone: "",
+      });
+    }
+  }, []);
+
+  const handleCopyUserId = async () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(userId);
+      } else {
+        // Fallback for older browsers
+        const textArea = document.createElement("textarea");
+        textArea.value = userId;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+      }
+      setCopied(true);
+      toast({
+        title: "Copied!",
+        description: "User ID copied to clipboard",
+      });
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error("Copy failed:", error);
+      toast({
+        title: "Error",
+        description: "Failed to copy ID",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -65,6 +115,31 @@ const EditProfile = () => {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSave} className="space-y-6">
+                {/* User ID Section */}
+                <div className="bg-accent/10 border border-accent/20 rounded-lg p-4 space-y-2">
+                  <Label className="text-sm font-semibold">Your User ID</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="text"
+                      value={userId}
+                      readOnly
+                      className="flex-1 bg-background"
+                    />
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="outline"
+                      onClick={handleCopyUserId}
+                      className={copied ? "bg-primary text-primary-foreground" : ""}
+                    >
+                      {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Share this ID with friends to add you. Each ID is unique and permanent.
+                  </p>
+                </div>
+
                 {/* Profile Picture */}
                 <div className="flex items-center gap-4">
                   <Avatar className="h-20 w-20">

@@ -28,7 +28,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, query, where, orderBy, onSnapshot, Timestamp } from "firebase/firestore";
+import { collection, addDoc, query, where, orderBy, onSnapshot, Timestamp, getDoc, doc, updateDoc, deleteDoc, setDoc, getDocs } from "firebase/firestore";
 
 interface Friend {
   id: string;
@@ -40,6 +40,8 @@ interface FriendRequest {
   id: string;
   name: string;
   avatar?: string;
+  fromUserId?: string;
+  fromUserName?: string;
 }
 
 interface Message {
@@ -94,22 +96,8 @@ const MainPage = () => {
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
-  const [friends, setFriends] = useState<Friend[]>(() => {
-    const saved = localStorage.getItem("soulVoyageFriends");
-    return saved ? JSON.parse(saved) : [
-      { id: "1", name: "Sarah Johnson" },
-      { id: "2", name: "Mike Chen" },
-      { id: "3", name: "Emma Wilson" },
-    ];
-  });
-  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>(() => {
-    const saved = localStorage.getItem("soulVoyageFriendRequests");
-    return saved ? JSON.parse(saved) : [
-      { id: "req1", name: "Alex Rivera" },
-      { id: "req2", name: "Jordan Smith" },
-      { id: "req3", name: "Droid" },
-    ];
-  });
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
   const [messages, setMessages] = useState<Message[]>(() => {
     const saved = localStorage.getItem("soulVoyageMessages");
     return saved ? JSON.parse(saved) : [];
@@ -167,9 +155,7 @@ const MainPage = () => {
     localStorage.setItem("soulVoyageFriends", JSON.stringify(friends));
   }, [friends]);
 
-  useEffect(() => {
-    localStorage.setItem("soulVoyageFriendRequests", JSON.stringify(friendRequests));
-  }, [friendRequests]);
+
 
   useEffect(() => {
     localStorage.setItem("soulVoyageMessages", JSON.stringify(messages));
@@ -205,15 +191,102 @@ const MainPage = () => {
     };
   }, []);
 
+  // Load friends from Firestore in real-time
+  useEffect(() => {
+    const currentProfileId = localStorage.getItem("currentProfileId");
+    console.log("Current Profile ID:", currentProfileId);
+    
+    if (!currentProfileId) {
+      console.log("No profile ID found");
+      return;
+    }
+
+    try {
+      // Load friends from Firestore
+      const userDocRef = doc(db, "users", currentProfileId);
+      const friendsDocRef = collection(userDocRef, "friends");
+      
+      const unsubscribeFriends = onSnapshot(friendsDocRef, (snapshot) => {
+        console.log("Friends snapshot:", snapshot.docs.length, "friends found");
+        const firebaseFriends = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          name: doc.data().name,
+        }));
+        console.log("Friends from Firestore:", firebaseFriends);
+        setFriends(firebaseFriends);
+      });
+
+      return () => unsubscribeFriends();
+    } catch (error) {
+      console.error("Error loading friends from Firestore:", error);
+    }
+  }, []);
+
+  // Load friend requests from Firestore in real-time
+  useEffect(() => {
+    const currentProfileId = localStorage.getItem("currentProfileId");
+    
+    if (!currentProfileId) {
+      console.log("No profile ID found");
+      return;
+    }
+
+    try {
+      const friendRequestsRef = collection(db, "friendRequests");
+      const q = query(
+        friendRequestsRef,
+        where("toUserId", "==", currentProfileId),
+        where("status", "==", "pending"),
+        orderBy("createdAt", "desc")
+      );
+
+      const unsubscribeFriendRequests = onSnapshot(q, (snapshot) => {
+        console.log("Friend requests snapshot:", snapshot.docs.length, "requests found");
+        const firebaseFriendRequests = snapshot.docs.map((doc) => {
+          console.log("Friend request:", doc.data());
+          return {
+            id: doc.id,
+            name: doc.data().fromUserName,
+            fromUserId: doc.data().fromUserId,
+            fromUserName: doc.data().fromUserName,
+          };
+        });
+        setFriendRequests(firebaseFriendRequests);
+      });
+
+      return () => unsubscribeFriendRequests();
+    } catch (error) {
+      console.error("Error setting up friend requests listener:", error);
+    }
+  }, []);
+
+  // Generate consistent conversation ID
+  const getConversationId = (otherUserId: string | undefined) => {
+    if (!otherUserId) return "";
+    const currentUserId = localStorage.getItem("currentProfileId") || "";
+    // Create a sorted, consistent ID that both users will use
+    return [currentUserId, otherUserId].sort().join("_");
+  };
+
   // Load messages from Firestore for current conversation
   useEffect(() => {
-    const conversationId = selectedFriend?.id || selectedChannel;
+    let conversationId = "";
+    
+    if (showDirectMessages && selectedFriend) {
+      conversationId = getConversationId(selectedFriend.id);
+    } else if (!showDirectMessages && selectedChannel) {
+      conversationId = selectedChannel;
+    }
+    
+    console.log("Messages listener setup - conversationId:", conversationId);
     
     if (!conversationId) {
+      console.log("No conversation ID, unsubscribing from messages");
       if (unsubscribeRef.current) {
         unsubscribeRef.current();
         unsubscribeRef.current = null;
       }
+      setMessages([]);
       return;
     }
 
@@ -221,15 +294,21 @@ const MainPage = () => {
       const messagesRef = collection(db, "conversations", conversationId, "messages");
       const q = query(messagesRef, orderBy("timestamp", "asc"));
 
+      console.log("Setting up listener for messages");
       unsubscribeRef.current = onSnapshot(q, (snapshot) => {
-        const firestoreMessages = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          senderId: doc.data().senderId,
-          senderName: doc.data().senderName,
-          content: doc.data().content,
-          timestamp: doc.data().timestamp,
-          conversationId: doc.data().conversationId,
-        }));
+        console.log("Messages snapshot received:", snapshot.docs.length, "messages");
+        const firestoreMessages = snapshot.docs.map((doc) => {
+          console.log("Message:", doc.data());
+          return {
+            id: doc.id,
+            senderId: doc.data().senderId,
+            senderName: doc.data().senderName,
+            content: doc.data().content,
+            timestamp: doc.data().timestamp,
+            conversationId: doc.data().conversationId,
+          };
+        });
+        console.log("Setting messages state:", firestoreMessages.length, "messages");
         setMessages(firestoreMessages);
       });
     } catch (error) {
@@ -237,12 +316,13 @@ const MainPage = () => {
     }
 
     return () => {
+      console.log("Cleaning up messages listener");
       if (unsubscribeRef.current) {
         unsubscribeRef.current();
         unsubscribeRef.current = null;
       }
     };
-  }, [selectedFriend?.id, selectedChannel]);
+  }, [selectedFriend?.id, selectedChannel, showDirectMessages]);
 
   useEffect(() => {
     if (searchParams.get("settingsSaved") === "true") {
@@ -384,10 +464,27 @@ const MainPage = () => {
 
   const handleSendMessage = async () => {
     if (message.trim()) {
-      const conversationId = selectedFriend?.id || selectedChannel || "";
+      let conversationId = "";
+      
+      console.log("Send message - showDirectMessages:", showDirectMessages, "selectedFriend:", selectedFriend);
+      
+      if (showDirectMessages && selectedFriend) {
+        conversationId = getConversationId(selectedFriend.id);
+      } else if (!showDirectMessages && selectedChannel) {
+        conversationId = selectedChannel;
+      }
+      
+      console.log("Conversation ID:", conversationId);
+      
+      if (!conversationId) {
+        console.log("No conversation ID - cannot send message");
+        return;
+      }
+
+      const currentProfileId = localStorage.getItem("currentProfileId") || "unknown";
       const newMessage: Message = {
         id: Date.now().toString(),
-        senderId: "current-user",
+        senderId: currentProfileId,
         senderName: currentProfileName,
         content: message,
         timestamp: Date.now(),
@@ -397,12 +494,14 @@ const MainPage = () => {
       setMessage("");
       
       try {
+        console.log("Saving message to Firestore:", newMessage);
         // Save to Firestore (Firestore listener will pick it up automatically)
         const messagesRef = collection(db, "conversations", conversationId, "messages");
-        await addDoc(messagesRef, {
+        const docRef = await addDoc(messagesRef, {
           ...newMessage,
           timestamp: Timestamp.now(),
         });
+        console.log("Message saved successfully with ID:", docRef.id);
       } catch (error) {
         console.error("Error sending message:", error);
         toast({
@@ -421,49 +520,236 @@ const MainPage = () => {
     }
   };
 
-  const handleAddFriend = () => {
+  const clearAllConversations = async () => {
+    try {
+      console.log("Clearing all conversations...");
+      const conversationsRef = collection(db, "conversations");
+      const snapshot = await getDocs(conversationsRef);
+      
+      for (const doc of snapshot.docs) {
+        // Delete all messages in this conversation
+        const messagesRef = collection(db, "conversations", doc.id, "messages");
+        const messagesSnapshot = await getDocs(messagesRef);
+        
+        for (const msgDoc of messagesSnapshot.docs) {
+          await deleteDoc(msgDoc.ref);
+        }
+        
+        // Delete the conversation document itself
+        await deleteDoc(doc.ref);
+      }
+      
+      console.log("All conversations cleared!");
+      toast({
+        title: "Success",
+        description: "All conversations have been cleared",
+      });
+      setMessages([]);
+    } catch (error) {
+      console.error("Error clearing conversations:", error);
+      toast({
+        title: "Error",
+        description: "Failed to clear conversations",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleAddFriend = async () => {
     if (!profileTag.trim()) {
       toast({
         title: "Error",
-        description: "Please enter a profile tag",
+        description: "Please enter a user ID",
         variant: "destructive",
       });
       return;
     }
 
-    const newFriend: Friend = {
-      id: Date.now().toString(),
-      name: profileTag,
-    };
+    try {
+      const currentProfileId = localStorage.getItem("currentProfileId");
+      if (!currentProfileId) {
+        toast({
+          title: "Error",
+          description: "No profile selected",
+          variant: "destructive",
+        });
+        return;
+      }
 
-    setFriends([newFriend, ...friends]);
-    setProfileTag("");
-    setShowAddFriendDialog(false);
-    toast({
-      title: "Friend Request Sent",
-      description: `Friend request sent to ${profileTag}`,
-    });
-  };
+      // Search Firestore first
+      const userDocRef = doc(db, "users", profileTag.trim().toUpperCase());
+      const userDocSnap = await getDoc(userDocRef);
 
-  const handleAcceptFriendRequest = (requestId: string) => {
-    const request = friendRequests.find(r => r.id === requestId);
-    if (request) {
-      setFriends([{ id: request.id, name: request.name, avatar: request.avatar }, ...friends]);
-      setFriendRequests(friendRequests.filter(r => r.id !== requestId));
+      let foundProfile;
+      if (userDocSnap.exists()) {
+        foundProfile = userDocSnap.data();
+      } else {
+        // Fallback to localStorage if not found in Firestore
+        const allProfiles = JSON.parse(localStorage.getItem("profiles") || "[]");
+        foundProfile = allProfiles.find(
+          (p: any) => (p.userId || p.id) === profileTag.trim().toUpperCase()
+        );
+      }
+
+      if (!foundProfile) {
+        toast({
+          title: "Error",
+          description: "User ID not found",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const userIdToAdd = foundProfile.userId || foundProfile.id;
+
+      if (currentProfileId === userIdToAdd) {
+        toast({
+          title: "Error",
+          description: "You cannot add yourself",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const alreadyFriend = friends.some((f) => f.id === userIdToAdd);
+      if (alreadyFriend) {
+        toast({
+          title: "Error",
+          description: "This user is already your friend",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const currentProfileName = localStorage.getItem("currentProfileName") || "User";
+
+      // Send friend request to Firestore
+      await addDoc(collection(db, "friendRequests"), {
+        fromUserId: currentProfileId,
+        fromUserName: currentProfileName,
+        toUserId: userIdToAdd,
+        toUserName: foundProfile.name,
+        status: "pending",
+        createdAt: Timestamp.now(),
+      });
+
+      setProfileTag("");
+      setShowAddFriendDialog(false);
       toast({
-        title: "Friend Request Accepted",
-        description: `${request.name} has been added to your friends`,
+        title: "Friend Request Sent!",
+        description: `Friend request sent to ${foundProfile.name}`,
+      });
+    } catch (error) {
+      console.error("Error sending friend request:", error);
+      toast({
+        title: "Error",
+        description: "Failed to send friend request",
+        variant: "destructive",
       });
     }
   };
 
-  const handleRejectFriendRequest = (requestId: string) => {
-    const request = friendRequests.find(r => r.id === requestId);
-    setFriendRequests(friendRequests.filter(r => r.id !== requestId));
-    if (request) {
+  const handleAcceptFriendRequest = async (requestId: string) => {
+    try {
+      console.log("Accepting friend request:", requestId);
+      
+      const request = friendRequests.find(r => r.id === requestId);
+      console.log("Found request:", request);
+      
+      if (!request) {
+        console.error("Request not found");
+        return;
+      }
+
+      const currentProfileId = localStorage.getItem("currentProfileId");
+      console.log("Current profile ID:", currentProfileId);
+      
+      if (!currentProfileId) {
+        console.error("No current profile ID");
+        return;
+      }
+
+      // Add both users as friends
+      const newFriend: Friend = {
+        id: request.fromUserId || request.id,
+        name: request.fromUserName || request.name,
+      };
+
+      console.log("New friend:", newFriend);
+
+      // Save friend to Firestore under current user
+      const userDocRef = doc(db, "users", currentProfileId);
+      const friendsCollectionRef = collection(userDocRef, "friends");
+      
+      console.log("Saving friend to Firestore...");
+      await setDoc(doc(friendsCollectionRef, newFriend.id), {
+        name: newFriend.name,
+        addedAt: Timestamp.now(),
+      });
+      console.log("Friend saved to current user");
+
+      // Update request status in Firestore
+      const requestDocRef = doc(db, "friendRequests", requestId);
+      console.log("Updating request status...");
+      await updateDoc(requestDocRef, { status: "accepted" });
+      console.log("Request status updated");
+
+      // Also add current user to requester's friends list (reciprocal friendship)
+      const requesterUserDocRef = doc(db, "users", request.fromUserId);
+      const requesterFriendsRef = collection(requesterUserDocRef, "friends");
+      const currentUserName = localStorage.getItem("currentProfileName") || "User";
+      
+      console.log("Current user name:", currentUserName);
+      
+      try {
+        console.log("Adding current user to requester's friends...");
+        await setDoc(doc(requesterFriendsRef, currentProfileId), {
+          name: currentUserName,
+          addedAt: Timestamp.now(),
+        });
+        console.log("Added current user to requester's friends");
+      } catch (reciprocalError) {
+        console.error("Error adding reciprocal friendship:", reciprocalError);
+        // Don't fail the whole operation if reciprocal add fails
+      }
+
+      // Remove from pending requests
+      setFriendRequests(friendRequests.filter(r => r.id !== requestId));
+
+      toast({
+        title: "Friend Request Accepted",
+        description: `${request.fromUserName || request.name} has been added to your friends`,
+      });
+    } catch (error) {
+      console.error("Error accepting friend request:", error);
+      toast({
+        title: "Error",
+        description: `Failed to accept friend request: ${error}`,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleRejectFriendRequest = async (requestId: string) => {
+    try {
+      const request = friendRequests.find(r => r.id === requestId);
+
+      // Delete request from Firestore
+      const requestDocRef = doc(db, "friendRequests", requestId);
+      await deleteDoc(requestDocRef);
+
+      setFriendRequests(friendRequests.filter(r => r.id !== requestId));
+
       toast({
         title: "Friend Request Declined",
-        description: `Declined request from ${request.name}`,
+        description: `Declined request from ${request?.fromUserName || request?.name}`,
+      });
+    } catch (error) {
+      console.error("Error rejecting friend request:", error);
+      toast({
+        title: "Error",
+        description: "Failed to reject friend request",
+        variant: "destructive",
       });
     }
   };
@@ -722,8 +1008,17 @@ const MainPage = () => {
         <div className="flex-1 flex flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {(() => {
-              const conversationId = selectedFriend?.id || selectedChannel || "";
+              let conversationId = "";
+              
+              if (showDirectMessages && selectedFriend) {
+                conversationId = getConversationId(selectedFriend.id);
+              } else if (!showDirectMessages && selectedChannel) {
+                conversationId = selectedChannel;
+              }
+              
+              console.log("Display - Looking for messages with conversationId:", conversationId);
               const conversationMessages = messages.filter(m => m.conversationId === conversationId);
+              console.log("Display - Found", conversationMessages.length, "messages");
               
               if (conversationMessages.length === 0) {
                 return (
@@ -758,20 +1053,27 @@ const MainPage = () => {
                 );
               }
               
-              return conversationMessages.map((msg) => (
-                <div key={msg.id} className={`flex ${msg.senderId === "current-user" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                    msg.senderId === "current-user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-accent/20 text-foreground"
-                  }`}>
-                    {msg.senderId !== "current-user" && (
-                      <p className="text-xs font-semibold mb-1">{msg.senderName}</p>
-                    )}
-                    <p className="break-words">{msg.content}</p>
+              const currentUserId = localStorage.getItem("currentProfileId");
+              console.log("Current User ID for display:", currentUserId);
+              return conversationMessages.map((msg) => {
+                // Handle both old format (senderId: "current-user") and new format (actual user ID)
+                const isCurrentUser = msg.senderId === currentUserId || msg.senderId === "current-user";
+                console.log("Message senderId:", msg.senderId, "Current User ID:", currentUserId, "Match:", isCurrentUser);
+                return (
+                  <div key={msg.id} className={`flex ${isCurrentUser ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                      isCurrentUser
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-accent/20 text-foreground"
+                    }`}>
+                      {!isCurrentUser && (
+                        <p className="text-xs font-semibold mb-1">{msg.senderName}</p>
+                      )}
+                      <p className="break-words">{msg.content}</p>
+                    </div>
                   </div>
-                </div>
-              ));
+                );
+              });
             })()}
           </div>
         </div>
@@ -837,17 +1139,17 @@ const MainPage = () => {
           <DialogHeader>
             <DialogTitle>Add Friend</DialogTitle>
             <DialogDescription>
-              You can add friends with their profile tag.
+              Enter a friend's User ID to add them to your friends list.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="profile-tag">Profile Tag</Label>
+              <Label htmlFor="profile-tag">User ID</Label>
               <Input
                 id="profile-tag"
-                placeholder="username#1234"
+                placeholder="Paste their User ID here..."
                 value={profileTag}
-                onChange={(e) => setProfileTag(e.target.value)}
+                onChange={(e) => setProfileTag(e.target.value.toUpperCase())}
                 onKeyPress={(e) => {
                   if (e.key === "Enter") {
                     handleAddFriend();
@@ -855,14 +1157,14 @@ const MainPage = () => {
                 }}
               />
               <p className="text-xs text-muted-foreground">
-                Enter the exact profile tag with discriminator
+                Ask your friend to share their User ID from Edit Profile
               </p>
             </div>
             <Button
               onClick={handleAddFriend}
               className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-semibold"
             >
-              Send Friend Request
+              Add Friend
             </Button>
           </div>
         </DialogContent>

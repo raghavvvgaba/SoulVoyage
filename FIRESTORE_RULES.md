@@ -1,0 +1,51 @@
+# Firestore Security Rules Update
+
+Replace your Firestore rules with the following:
+
+1. Go to Firebase Console → Firestore Database → Rules tab
+2. Delete all existing rules
+3. Paste this:
+
+```firestore
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow anyone to read user profiles
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if request.auth.uid == userId;
+      allow create: if true;
+      
+      // Friends sub-collection
+      match /friends/{friendId} {
+        allow read, write: if true;
+      }
+    }
+    
+    // Allow friend requests
+    match /friendRequests/{requestId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if true;
+    }
+    
+    // Allow conversations and messages
+    match /conversations/{conversationId}/messages/{messageId} {
+      allow read, write: if true;
+    }
+    match /conversations/{conversationId} {
+      allow read, write: if true;
+    }
+  }
+}
+```
+
+4. Click "Publish"
+
+## What this allows:
+- ✅ Anyone can read all user profiles (to search and add friends)
+- ✅ Each user can only write/update their own profile
+- ✅ Users can create/read/update/delete friend requests
+- ✅ Anyone can read/write messages and conversations (for messaging)
+- ✅ Users can create new profiles

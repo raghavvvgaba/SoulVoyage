@@ -4,7 +4,8 @@ import { useTheme } from "next-themes";
 import {
   createUserWithEmailAndPassword,
 } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
+import { collection, addDoc, setDoc, doc } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -102,6 +103,10 @@ const SignupAuth = () => {
     return true;
   };
 
+  const generateUserId = () => {
+    return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`.toUpperCase();
+  };
+
   const handleEmailSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
@@ -109,7 +114,31 @@ const SignupAuth = () => {
     setLoading(true);
     try {
       const trimmedEmail = email.trim().toLowerCase();
-      await createUserWithEmailAndPassword(auth, trimmedEmail, password);
+      const authResult = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
+      
+      const fullName = middleName 
+        ? `${firstName} ${middleName} ${lastName}` 
+        : `${firstName} ${lastName}`;
+      
+      const userId = generateUserId();
+      const newProfile = {
+        id: userId,
+        name: fullName,
+        email: trimmedEmail,
+        userId: userId,
+        createdAt: new Date(),
+      };
+
+      // Save profile to Firestore
+      await setDoc(doc(db, "users", userId), newProfile);
+
+      // Also save profile to localStorage for offline access
+      const existingProfiles = JSON.parse(localStorage.getItem("profiles") || "[]");
+      existingProfiles.push(newProfile);
+      localStorage.setItem("profiles", JSON.stringify(existingProfiles));
+      localStorage.setItem("currentProfileId", userId);
+      localStorage.setItem("currentProfileName", fullName);
+
       toast({
         title: "Success",
         description: "Account created successfully",
