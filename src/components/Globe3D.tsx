@@ -17,13 +17,6 @@ export const Globe3D = () => {
           mapContainerRef.current.id = containerId;
           
           mapServiceRef.current = new MapService(containerId);
-          
-          // Add markers for popular server locations
-          mapServiceRef.current.addMarker(37.7749, -122.4194, 'San Francisco - Tech Hub');
-          mapServiceRef.current.addMarker(51.5074, -0.1278, 'London - Urban Explorers');
-          mapServiceRef.current.addMarker(35.6762, 139.6503, 'Tokyo - Asia Community');
-          mapServiceRef.current.addMarker(48.8566, 2.3522, 'Paris - Culture & Art');
-          mapServiceRef.current.addMarker(-33.8688, 151.2093, 'Sydney - Beach Life');
         } catch (error) {
           console.error('Error initializing map:', error);
           setTimeout(initializeMap, 1000);
