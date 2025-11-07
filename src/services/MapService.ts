@@ -12,10 +12,21 @@ export class MapService {
       return;
     }
 
-    this.earth = WE.map(containerId);
-    WE.tileLayer('http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
-      .addTo(this.earth);
-    this.earth.setView([20, 0], 2);
+    // Check if container exists
+    const container = document.getElementById(containerId);
+    if (!container) {
+      console.warn(`Container with ID '${containerId}' not found`);
+      return;
+    }
+
+    try {
+      this.earth = WE.map(containerId);
+      WE.tileLayer('http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
+        .addTo(this.earth);
+      this.earth.setView([20, 0], 2);
+    } catch (error) {
+      console.error('Error initializing WebGL Earth map:', error);
+    }
   }
 
   public addMarker(lat: number, lng: number, title: string): void {
