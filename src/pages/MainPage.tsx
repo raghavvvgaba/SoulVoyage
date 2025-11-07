@@ -1401,9 +1401,9 @@ const MainPage = () => {
               const currentUserId = localStorage.getItem("currentProfileId");
               console.log("Current User ID for display:", currentUserId);
               
-              // Filter out messages deleted for everyone and messages deleted for this user
+              // Filter out only messages deleted for this specific user
+              // Messages with deletedForEveryone should still be visible (showing deletion message)
               const visibleMessages = conversationMessages.filter(msg => {
-                if (msg.deletedForEveryone) return false;
                 if (msg.deletedFor?.includes(currentUserId || "")) return false;
                 return true;
               });
