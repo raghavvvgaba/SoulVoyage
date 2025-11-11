@@ -1,5 +1,7 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { db, auth } from "@/lib/firebase";
+import { deleteDoc, doc, updateDoc, getDoc } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,10 +49,8 @@ const ServerSettings = () => {
 
   const defaultServers: Server[] = [];
 
-  const [servers, setServers] = useState<Server[]>(() => {
-    const savedServers = localStorage.getItem("soulVoyageServers");
-    return savedServers ? JSON.parse(savedServers) : defaultServers;
-  });
+  // Load servers from Firestore, not localStorage
+  const [servers, setServers] = useState<Server[]>(defaultServers);
 
   const currentServer = servers.find((s) => s.id === serverId);
   const [editedServerName, setEditedServerName] = useState(currentServer?.name || "");
@@ -58,7 +58,35 @@ const ServerSettings = () => {
     currentServer?.icon || null
   );
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteServerConfirmOpen, setDeleteServerConfirmOpen] = useState(false);
   const [channelToDelete, setChannelToDelete] = useState<string | null>(null);
+  const [serverOwner, setServerOwner] = useState<string | null>(null);
+  const [isOwner, setIsOwner] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  // Check if current user is the server owner
+  useEffect(() => {
+    const checkOwnership = async () => {
+      try {
+        if (!serverId) return;
+        
+        const serverDoc = await getDoc(doc(db, "servers", serverId));
+        if (serverDoc.exists()) {
+          const owner = serverDoc.data().owner;
+          setServerOwner(owner);
+          
+          const currentUserId = auth.currentUser?.uid;
+          setIsOwner(owner === currentUserId);
+        }
+      } catch (error) {
+        console.error("Error checking ownership:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkOwnership();
+  }, [serverId]);
 
   if (!currentServer) {
     return (
@@ -66,6 +94,55 @@ const ServerSettings = () => {
         <div className="text-center">
           <h1 className="text-2xl font-bold mb-4">Server not found</h1>
           <Button onClick={() => navigate("/main")}>Back to Main</Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+          <p className="text-muted-foreground mt-4">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isOwner) {
+    return (
+      <div className="flex h-screen">
+        <div className="flex-1 flex flex-col">
+          {/* Top Bar */}
+          <div className="h-14 border-b border-border flex items-center justify-between px-6 bg-card/30 backdrop-blur-sm">
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => navigate("/main")}
+                className="h-9 w-9"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <h1 className="text-xl font-semibold">Server Settings</h1>
+            </div>
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <ProfileMenu />
+            </div>
+          </div>
+
+          {/* No Permission Message */}
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center space-y-4">
+              <h2 className="text-2xl font-bold">Access Denied</h2>
+              <p className="text-muted-foreground">
+                Only the server owner can modify settings.
+              </p>
+              <Button onClick={() => navigate("/main")}>Back to Main</Button>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -83,7 +160,7 @@ const ServerSettings = () => {
     }
   };
 
-  const handleSaveSettings = () => {
+  const handleSaveSettings = async () => {
     if (!editedServerName.trim()) {
       toast({
         title: "Error",
@@ -93,39 +170,72 @@ const ServerSettings = () => {
       return;
     }
 
-    const updatedServers = servers.map((server) =>
-      server.id === serverId
-        ? {
-            ...server,
-            name: editedServerName,
-            icon: editedServerIcon || undefined,
-          }
-        : server
-    );
+    try {
+      // Update in Firestore
+      if (serverId) {
+        await updateDoc(doc(db, "servers", serverId), {
+          name: editedServerName,
+          icon: editedServerIcon || "",
+        });
+      }
 
-    setServers(updatedServers);
-    localStorage.setItem("soulVoyageServers", JSON.stringify(updatedServers));
+      const updatedServers = servers.map((server) =>
+        server.id === serverId
+          ? {
+              ...server,
+              name: editedServerName,
+              icon: editedServerIcon || undefined,
+            }
+          : server
+      );
 
-    toast({
-      title: "Success",
-      description: "Server settings saved successfully",
-    });
+      setServers(updatedServers);
+      // Removed localStorage - data saved to Firestore
 
-    navigate("/main?settingsSaved=true");
+      toast({
+        title: "Success",
+        description: "Server settings saved successfully",
+      });
+
+      navigate("/main?settingsSaved=true");
+    } catch (error) {
+      console.error("Error saving server settings:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save server settings",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleDeleteServer = () => {
-    if (
-      window.confirm(
-        `Are you sure you want to delete "${editedServerName}"? This action cannot be undone.`
-      )
-    ) {
-      setServers(servers.filter((s) => s.id !== serverId));
+    setDeleteServerConfirmOpen(true);
+  };
+
+  const confirmDeleteServer = async () => {
+    try {
+      if (!serverId) return;
+
+      // Delete from Firestore
+      await deleteDoc(doc(db, "servers", serverId));
+
+      // Update local state
+      const updatedServers = servers.filter((s) => s.id !== serverId);
+      setServers(updatedServers);
+      // Removed localStorage - data saved to Firestore
+      setDeleteServerConfirmOpen(false);
       toast({
         title: "Success",
         description: "Server deleted successfully",
       });
       navigate("/main");
+    } catch (error) {
+      console.error("Error deleting server:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete server",
+        variant: "destructive",
+      });
     }
   };
 
@@ -147,7 +257,7 @@ const ServerSettings = () => {
     );
 
     setServers(updatedServers);
-    localStorage.setItem("soulVoyageServers", JSON.stringify(updatedServers));
+    // Removed localStorage - data saved to Firestore
     setDeleteConfirmOpen(false);
     setChannelToDelete(null);
 
@@ -376,6 +486,27 @@ const ServerSettings = () => {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDeleteChannel}
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              Delete
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Server Confirmation Dialog */}
+      <AlertDialog open={deleteServerConfirmOpen} onOpenChange={setDeleteServerConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Server?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{editedServerName}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex gap-3 justify-end">
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteServer}
               className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
             >
               Delete

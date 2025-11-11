@@ -10,12 +10,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/context/AuthContext";
 
 const EditProfile = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { currentProfile } = useAuth();
   const [userId, setUserId] = useState("");
   const [copied, setCopied] = useState(false);
   
@@ -28,17 +26,21 @@ const EditProfile = () => {
   });
 
   useEffect(() => {
-    if (currentProfile) {
-      setUserId(currentProfile.userId || currentProfile.id);
+    const currentProfileId = localStorage.getItem("currentProfileId");
+    const profiles = JSON.parse(localStorage.getItem("profiles") || "[]");
+    const profile = profiles.find((p: any) => p.id === currentProfileId);
+    
+    if (profile) {
+      setUserId(profile.userId || profile.id);
       setFormData({
-        name: currentProfile.name || "",
-        email: currentProfile.email || "",
+        name: profile.name || "",
+        email: profile.email || "",
         bio: "",
         location: "",
         phone: "",
       });
     }
-  }, [currentProfile]);
+  }, []);
 
   const handleCopyUserId = async () => {
     try {

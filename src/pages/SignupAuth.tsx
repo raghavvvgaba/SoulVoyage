@@ -5,7 +5,7 @@ import {
   createUserWithEmailAndPassword,
 } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
-import { collection, addDoc, setDoc, doc } from "firebase/firestore";
+import { collection, addDoc, setDoc, doc, Timestamp } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -120,24 +120,24 @@ const SignupAuth = () => {
         ? `${firstName} ${middleName} ${lastName}` 
         : `${firstName} ${lastName}`;
       
-      const userId = generateUserId();
+      // Use Firebase Auth UID as the document ID
+      const userId = authResult.user.uid;
+      const customUserId = generateUserId(); // Keep for display purposes
+      
       const newProfile = {
         id: userId,
         name: fullName,
         email: trimmedEmail,
-        userId: userId,
-        createdAt: new Date(),
+        userId: customUserId, // Custom display ID
+        createdAt: Timestamp.now(),
       };
 
-      // Save profile to Firestore
+      console.log("SignupAuth - Saving user to Firestore:", userId, newProfile);
+
+      // Save profile to Firestore using Firebase Auth UID as document ID
       await setDoc(doc(db, "users", userId), newProfile);
 
-      // Also save profile to localStorage for offline access
-      const existingProfiles = JSON.parse(localStorage.getItem("profiles") || "[]");
-      existingProfiles.push(newProfile);
-      localStorage.setItem("profiles", JSON.stringify(existingProfiles));
-      localStorage.setItem("currentProfileId", userId);
-      localStorage.setItem("currentProfileName", fullName);
+      console.log("SignupAuth - User saved successfully");
 
       toast({
         title: "Success",

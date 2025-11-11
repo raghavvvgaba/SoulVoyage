@@ -96,7 +96,7 @@ const MainPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
-  const { currentProfile, user } = useAuth();
+  const { currentProfile } = useAuth();
   const [message, setMessage] = useState("");
   const [selectedServer, setSelectedServer] = useState<string | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
@@ -132,8 +132,7 @@ const MainPage = () => {
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const currentProfileName = currentProfile?.name || "You";
-  const currentProfileId = user?.uid || null; // Use Firebase Auth UID
-  const customUserId = currentProfile?.userId || null; // Custom display ID for friend requests
+  const currentProfileId = currentProfile?.userId || null;
   const wsRef = useRef<WebSocket | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
@@ -260,9 +259,7 @@ const MainPage = () => {
   const getConversationId = (otherUserId: string | undefined) => {
     if (!otherUserId || !currentProfileId) return "";
     // Create a sorted, consistent ID that both users will use
-    const convId = [currentProfileId, otherUserId].sort().join("_");
-    console.log("Generated conversationId:", convId, "from", currentProfileId, "and", otherUserId);
-    return convId;
+    return [currentProfileId, otherUserId].sort().join("_");
   };
 
   // Load messages from Firestore for current conversation
@@ -270,14 +267,12 @@ const MainPage = () => {
     let conversationId = "";
     
     if (showDirectMessages && selectedFriend) {
-      // Direct message: dm_{uid1}_{uid2}
-      conversationId = `dm_${getConversationId(selectedFriend.id)}`;
-    } else if (!showDirectMessages && selectedChannel && selectedServer) {
-      // Server channel message: server_{serverId}_channel_{channelId}
-      conversationId = `server_${selectedServer}_channel_${selectedChannel}`;
+      conversationId = getConversationId(selectedFriend.id);
+    } else if (!showDirectMessages && selectedChannel) {
+      conversationId = selectedChannel;
     }
     
-    console.log("Messages listener setup - conversationId:", conversationId, "type:", showDirectMessages ? "DM" : "Server Channel");
+    console.log("Messages listener setup - conversationId:", conversationId);
     
     if (!conversationId) {
       console.log("No conversation ID, unsubscribing from messages");
@@ -329,52 +324,37 @@ const MainPage = () => {
     };
   }, [selectedFriend?.id, selectedChannel, showDirectMessages]);
 
-  // Load servers from Firestore in real-time (only servers user is a member of)
+  // Load servers from Firestore in real-time
   useEffect(() => {
-    if (!currentProfileId) {
-      console.log("No currentProfileId, skipping server load");
-      setServers([]);
-      return;
-    }
-
-    console.log("Loading servers for user:", currentProfileId);
     const serversRef = collection(db, "servers");
     
     const unsubscribeServers = onSnapshot(serversRef, async (snapshot) => {
-      console.log("Servers snapshot:", snapshot.docs.length, "total servers in database");
+      console.log("Servers snapshot:", snapshot.docs.length, "servers found");
       
       const serversPromises = snapshot.docs.map(async (docSnap) => {
         const serverData = docSnap.data();
         
-        // Check if user is a member of this server
+        // Count members
         const membersSnapshot = await getDocs(collection(db, `servers/${docSnap.id}/members`));
-        const isMember = membersSnapshot.docs.some(memberDoc => memberDoc.id === currentProfileId);
         
-        console.log(`Server ${serverData.name}: user is member?`, isMember);
-        
-        // Only return server if user is a member
-        if (isMember) {
-          return {
-            id: docSnap.id,
-            name: serverData.name,
-            icon: serverData.icon,
-            isPublic: serverData.isPublic,
-            channels: serverData.channels || [{ id: "general_1", name: "general", type: "text", categoryId: "cat_1" }],
-            categories: serverData.categories || [{ id: "cat_1", name: "TEXT MESSAGES" }],
-          };
-        }
-        return null;
+        return {
+          id: docSnap.id,
+          name: serverData.name,
+          icon: serverData.icon,
+          channels: serverData.channels || [{ id: "general_1", name: "general", type: "text", categoryId: "cat_1" }],
+          categories: serverData.categories || [{ id: "cat_1", name: "TEXT MESSAGES" }],
+        };
       });
       
-      const firestoreServers = (await Promise.all(serversPromises)).filter(server => server !== null);
+      const firestoreServers = await Promise.all(serversPromises);
       const withCategories = firestoreServers.map(ensureServerHasCategories);
       
-      console.log("Loaded servers user is member of:", withCategories.length, "servers");
+      console.log("Loaded servers from Firestore:", withCategories);
       setServers(withCategories);
     });
 
     return () => unsubscribeServers();
-  }, [currentProfileId]);
+  }, []);
 
   useEffect(() => {
     if (searchParams.get("settingsSaved") === "true") {
@@ -392,7 +372,7 @@ const MainPage = () => {
     setSelectedChannel(servers.find(s => s.id === serverId)?.channels?.[0]?.id || null);
   };
 
-  const handleCreateServer = async (serverData: { name: string; icon?: string; isPublic?: boolean }) => {
+  const handleCreateServer = async (serverData: { name: string; icon?: string }) => {
     if (!currentProfileId) {
       toast({
         title: "Error",
@@ -406,13 +386,11 @@ const MainPage = () => {
       const serverId = `server_${Date.now()}`;
       const userId = currentProfileId;
       
-      console.log("Creating server:", serverData.name, "isPublic:", serverData.isPublic);
-      
       // Save to Firestore
       await setDoc(doc(db, "servers", serverId), {
         name: serverData.name,
         icon: serverData.icon || "",
-        isPublic: serverData.isPublic !== false, // Default to true if not specified
+        isPublic: true,
         owner: userId,
         place: "Location",
         description: "",
@@ -421,15 +399,11 @@ const MainPage = () => {
         createdAt: Timestamp.now(),
       });
 
-      console.log("Server created in Firestore");
-
       // Add current user as a member
       await setDoc(doc(db, `servers/${serverId}/members`, userId), {
         joinedAt: Timestamp.now(),
         role: "owner",
       });
-      
-      console.log("User added as owner member");
 
       // The Firestore listener will automatically add it to the servers list
       // Just expand it and select it
@@ -593,17 +567,15 @@ const MainPage = () => {
     if (message.trim()) {
       let conversationId = "";
       
-      console.log("Send message - showDirectMessages:", showDirectMessages, "selectedFriend:", selectedFriend, "selectedChannel:", selectedChannel);
+      console.log("Send message - showDirectMessages:", showDirectMessages, "selectedFriend:", selectedFriend);
       
       if (showDirectMessages && selectedFriend) {
-        // Direct message: dm_{uid1}_{uid2}
-        conversationId = `dm_${getConversationId(selectedFriend.id)}`;
-      } else if (!showDirectMessages && selectedChannel && selectedServer) {
-        // Server channel message: server_{serverId}_channel_{channelId}
-        conversationId = `server_${selectedServer}_channel_${selectedChannel}`;
+        conversationId = getConversationId(selectedFriend.id);
+      } else if (!showDirectMessages && selectedChannel) {
+        conversationId = selectedChannel;
       }
       
-      console.log("Conversation ID:", conversationId, "Type:", showDirectMessages ? "Direct Message" : "Server Channel");
+      console.log("Conversation ID:", conversationId);
       
       if (!conversationId) {
         console.log("No conversation ID - cannot send message");
@@ -674,9 +646,9 @@ const MainPage = () => {
     let conversationId = "";
     
     if (showDirectMessages && selectedFriend) {
-      conversationId = `dm_${getConversationId(selectedFriend.id)}`;
-    } else if (!showDirectMessages && selectedChannel && selectedServer) {
-      conversationId = `server_${selectedServer}_channel_${selectedChannel}`;
+      conversationId = getConversationId(selectedFriend.id);
+    } else if (!showDirectMessages && selectedChannel) {
+      conversationId = selectedChannel;
     }
     
     if (!conversationId || !currentProfileId) return;
@@ -725,9 +697,9 @@ const MainPage = () => {
     let conversationId = "";
     
     if (showDirectMessages && selectedFriend) {
-      conversationId = `dm_${getConversationId(selectedFriend.id)}`;
-    } else if (!showDirectMessages && selectedChannel && selectedServer) {
-      conversationId = `server_${selectedServer}_channel_${selectedChannel}`;
+      conversationId = getConversationId(selectedFriend.id);
+    } else if (!showDirectMessages && selectedChannel) {
+      conversationId = selectedChannel;
     }
     
     if (!conversationId || !currentProfileId) return;
@@ -1024,14 +996,11 @@ const MainPage = () => {
         return;
       }
 
-      console.log("Searching for user with ID:", profileTag.trim().toUpperCase());
+      // Search Firestore
+      const userDocRef = doc(db, "users", profileTag.trim().toUpperCase());
+      const userDocSnap = await getDoc(userDocRef);
 
-      // Search Firestore by custom userId field (not document ID)
-      const usersRef = collection(db, "users");
-      const q = query(usersRef, where("userId", "==", profileTag.trim().toUpperCase()));
-      const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) {
+      if (!userDocSnap.exists()) {
         toast({
           title: "Error",
           description: "User ID not found",
@@ -1040,12 +1009,8 @@ const MainPage = () => {
         return;
       }
 
-      // Get the first matching user
-      const userDoc = querySnapshot.docs[0];
-      const foundProfile = userDoc.data();
-      const userIdToAdd = userDoc.id; // This is the Firebase Auth UID (document ID)
-      
-      console.log("Found user:", foundProfile.name, "Auth UID:", userIdToAdd);
+      const foundProfile = userDocSnap.data();
+      const userIdToAdd = foundProfile.userId || userDocSnap.id;
 
       if (currentProfileId === userIdToAdd) {
         toast({
@@ -1066,11 +1031,11 @@ const MainPage = () => {
         return;
       }
 
-      // Send friend request to Firestore using Auth UIDs
+      // Send friend request to Firestore
       await addDoc(collection(db, "friendRequests"), {
-        fromUserId: currentProfileId, // Firebase Auth UID
+        fromUserId: currentProfileId,
         fromUserName: currentProfileName,
-        toUserId: userIdToAdd, // This should be the target's Firebase Auth UID
+        toUserId: userIdToAdd,
         toUserName: foundProfile.name,
         status: "pending",
         createdAt: Timestamp.now(),
@@ -1140,7 +1105,7 @@ const MainPage = () => {
       // Also add current user to requester's friends list (reciprocal friendship)
       const requesterUserDocRef = doc(db, "users", request.fromUserId);
       const requesterFriendsRef = collection(requesterUserDocRef, "friends");
-      const currentUserName = currentProfileName || "User";
+      const currentUserName = localStorage.getItem("currentProfileName") || "User";
       
       console.log("Current user name:", currentUserName);
       
@@ -1464,9 +1429,9 @@ const MainPage = () => {
               let conversationId = "";
               
               if (showDirectMessages && selectedFriend) {
-                conversationId = `dm_${getConversationId(selectedFriend.id)}`;
-              } else if (!showDirectMessages && selectedChannel && selectedServer) {
-                conversationId = `server_${selectedServer}_channel_${selectedChannel}`;
+                conversationId = getConversationId(selectedFriend.id);
+              } else if (!showDirectMessages && selectedChannel) {
+                conversationId = selectedChannel;
               }
               
               console.log("Display - Looking for messages with conversationId:", conversationId);

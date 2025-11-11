@@ -15,7 +15,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, query, where, orderBy, onSnapshot, updateDoc, deleteDoc, doc, Timestamp, setDoc } from "firebase/firestore";
 
@@ -34,11 +33,15 @@ interface FriendRequest {
 const Friends = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { currentProfile, user } = useAuth();
-  const currentProfileId = currentProfile?.userId;
-  const authUserId = user?.uid;
   
-  const [friends, setFriends] = useState<Friend[]>([]);
+  const [friends, setFriends] = useState<Friend[]>(() => {
+    const saved = localStorage.getItem("soulVoyageFriends");
+    return saved ? JSON.parse(saved) : [
+      { id: "1", name: "Sarah Johnson" },
+      { id: "2", name: "Mike Chen" },
+      { id: "3", name: "Emma Wilson" },
+    ];
+  });
 
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
 
@@ -46,26 +49,19 @@ const Friends = () => {
   const [friendToRemove, setFriendToRemove] = useState<Friend | null>(null);
 
   useEffect(() => {
-    // Use Auth UID to load friends (this is where they're stored)
-    if (!authUserId) {
-      console.log("No auth user ID, cannot load friends");
-      return;
-    }
-
-    console.log("Loading friends for user:", authUserId);
+    const currentProfileId = localStorage.getItem("currentProfileId");
+    if (!currentProfileId) return;
 
     try {
-      // Load friends from Firestore using Firebase Auth UID
-      const userDocRef = doc(db, "users", authUserId);
+      // Load friends from Firestore
+      const userDocRef = doc(db, "users", currentProfileId);
       const friendsDocRef = collection(userDocRef, "friends");
       
       const unsubscribeFriends = onSnapshot(friendsDocRef, (snapshot) => {
-        console.log("Friends snapshot received:", snapshot.docs.length, "friends");
         const firebaseFriends = snapshot.docs.map((doc) => ({
           id: doc.id,
           name: doc.data().name,
         }));
-        console.log("Friends loaded:", firebaseFriends);
         setFriends(firebaseFriends);
       });
 
@@ -73,35 +69,28 @@ const Friends = () => {
     } catch (error) {
       console.error("Error loading friends from Firestore:", error);
     }
-  }, [authUserId]);
+  }, []);
 
   useEffect(() => {
-    // Load friend requests using Auth UID
-    if (!authUserId) {
-      console.log("No auth user ID, cannot load friend requests");
-      return;
-    }
-
-    console.log("Loading friend requests for user:", authUserId);
+    const currentProfileId = localStorage.getItem("currentProfileId");
+    if (!currentProfileId) return;
 
     try {
       const friendRequestsRef = collection(db, "friendRequests");
       const q = query(
         friendRequestsRef,
-        where("toUserId", "==", authUserId),
+        where("toUserId", "==", currentProfileId),
         where("status", "==", "pending"),
         orderBy("createdAt", "desc")
       );
 
       const unsubscribe = onSnapshot(q, (snapshot) => {
-        console.log("Friend requests snapshot:", snapshot.docs.length, "requests");
         const firestoreFriendRequests = snapshot.docs.map((doc) => ({
           id: doc.id,
           name: doc.data().fromUserName,
           fromUserId: doc.data().fromUserId,
           fromUserName: doc.data().fromUserName,
         }));
-        console.log("Friend requests loaded:", firestoreFriendRequests);
         setFriendRequests(firestoreFriendRequests);
       });
 
@@ -109,7 +98,7 @@ const Friends = () => {
     } catch (error) {
       console.error("Error setting up friend requests listener:", error);
     }
-  }, [authUserId]);
+  }, []);
 
   const getInitials = (name: string) => {
     return name
@@ -122,73 +111,54 @@ const Friends = () => {
   const handleAcceptFriendRequest = async (requestId: string) => {
     try {
       const request = friendRequests.find(r => r.id === requestId);
-      if (!request || !authUserId) {
-        console.error("Missing request or authUserId:", { request, authUserId });
-        toast({
-          title: "Error",
-          description: "Invalid request data",
-          variant: "destructive",
-        });
-        return;
-      }
+      if (!request) return;
 
-      if (!currentProfile) {
-        console.error("No current profile found");
-        toast({
-          title: "Error",
-          description: "Profile not loaded. Please refresh the page.",
-          variant: "destructive",
-        });
-        return;
-      }
+      const currentProfileId = localStorage.getItem("currentProfileId");
+      if (!currentProfileId) return;
 
-      console.log("Accepting friend request:", requestId, "from:", request.fromUserId);
-      console.log("Current user:", authUserId, currentProfile.name);
-
-      // Add friend to current user's friends list
+      // Add friend
       const newFriend: Friend = {
-        id: request.fromUserId,
+        id: request.fromUserId || request.id,
         name: request.fromUserName || request.name,
       };
 
-      console.log("Step 1: Adding friend to current user...");
-      const userDocRef = doc(db, "users", authUserId);
+      // Save friend to Firestore
+      const userDocRef = doc(db, "users", currentProfileId);
       const friendsCollectionRef = collection(userDocRef, "friends");
       await setDoc(doc(friendsCollectionRef, newFriend.id), {
         name: newFriend.name,
-        addedAt: Timestamp.now(),
+        addedAt: new Date(),
       });
-      console.log("✅ Friend saved to current user");
 
-      console.log("Step 2: Updating request status...");
+      // Update Firestore request status
       const requestDocRef = doc(db, "friendRequests", requestId);
       await updateDoc(requestDocRef, { status: "accepted" });
-      console.log("✅ Request status updated");
 
-      console.log("Step 3: Adding current user to requester's friends...");
+      // Also add current user to requester's friends list (reciprocal friendship)
       const requesterUserDocRef = doc(db, "users", request.fromUserId);
       const requesterFriendsRef = collection(requesterUserDocRef, "friends");
-      await setDoc(doc(requesterFriendsRef, authUserId), {
-        name: currentProfile.name,
-        addedAt: Timestamp.now(),
-      });
-      console.log("✅ Added current user to requester's friends");
+      const currentUserProfile = JSON.parse(localStorage.getItem("profiles") || "[]")
+        .find((p: any) => p.id === currentProfileId);
+      
+      if (currentUserProfile) {
+        await setDoc(doc(requesterFriendsRef, currentProfileId), {
+          name: currentUserProfile.name,
+          addedAt: new Date(),
+        });
+      }
 
-      // Remove from pending locally
+      // Remove from pending
       setFriendRequests(friendRequests.filter(r => r.id !== requestId));
 
-      console.log("✅ Friend request accepted successfully!");
       toast({
         title: "Friend Request Accepted",
         description: `${request.fromUserName || request.name} has been added to your friends`,
       });
-    } catch (error: any) {
-      console.error("❌ Error accepting friend request:", error);
-      console.error("Error code:", error.code);
-      console.error("Error message:", error.message);
+    } catch (error) {
+      console.error("Error accepting friend request:", error);
       toast({
         title: "Error",
-        description: `Failed to accept friend request: ${error.message || 'Unknown error'}`,
+        description: "Failed to accept friend request",
         variant: "destructive",
       });
     }
@@ -223,37 +193,15 @@ const Friends = () => {
     setShowRemoveDialog(true);
   };
 
-  const confirmRemoveFriend = async () => {
-    if (!friendToRemove || !authUserId) return;
-
-    try {
-      console.log("Removing friend:", friendToRemove.name, "ID:", friendToRemove.id);
-
-      // Delete from current user's friends list in Firestore
-      const friendDocRef = doc(db, "users", authUserId, "friends", friendToRemove.id);
-      await deleteDoc(friendDocRef);
-      console.log("Friend removed from current user");
-
-      // Also remove current user from the friend's friends list (mutual removal)
-      const mutualFriendDocRef = doc(db, "users", friendToRemove.id, "friends", authUserId);
-      await deleteDoc(mutualFriendDocRef);
-      console.log("Current user removed from friend's list");
-
-      // The real-time listener will automatically update the friends list
+  const confirmRemoveFriend = () => {
+    if (friendToRemove) {
+      setFriends(friends.filter(f => f.id !== friendToRemove.id));
       toast({
         title: "Friend Removed",
         description: `${friendToRemove.name} has been removed from your friends`,
       });
-      
       setShowRemoveDialog(false);
       setFriendToRemove(null);
-    } catch (error) {
-      console.error("Error removing friend:", error);
-      toast({
-        title: "Error",
-        description: "Failed to remove friend",
-        variant: "destructive",
-      });
     }
   };
 

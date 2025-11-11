@@ -1,82 +1,24 @@
-import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, UserCircle2, Plus } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ProfileMenu } from "@/components/ProfileMenu";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { useToast } from "@/hooks/use-toast";
-
-interface Profile {
-  id: string;
-  name: string;
-  email: string;
-  avatarUrl?: string;
-  isCurrent?: boolean;
-}
+import { useAuth } from "@/context/AuthContext";
 
 const ChangeProfiles = () => {
   const navigate = useNavigate();
-  const { toast } = useToast();
-  
-  const [profiles, setProfiles] = useState<Profile[]>([
-    {
-      id: "1",
-      name: "John Doe",
-      email: "john.doe@example.com",
-    },
-    {
-      id: "2",
-      name: "Jane Smith",
-      email: "jane.smith@example.com",
-    },
-    {
-      id: "3",
-      name: "Bob Johnson",
-      email: "bob.johnson@example.com",
-    },
-  ]);
+  const { currentProfile, user } = useAuth();
 
-  const [currentProfileId, setCurrentProfileId] = useState<string>("1");
-
-  useEffect(() => {
-    const savedProfiles = localStorage.getItem("profiles");
-    if (savedProfiles) {
-      try {
-        setProfiles(JSON.parse(savedProfiles));
-      } catch (e) {
-        console.error("Error parsing profiles:", e);
-      }
-    }
-
-    const savedProfileId = localStorage.getItem("currentProfileId");
-    if (savedProfileId) {
-      setCurrentProfileId(savedProfileId);
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem("profiles", JSON.stringify(profiles));
-  }, [profiles]);
-
-  const handleSwitchProfile = (profileId: string) => {
-    const profile = profiles.find(p => p.id === profileId);
-    if (profile) {
-      localStorage.setItem("currentProfileId", profileId);
-      localStorage.setItem("profiles", JSON.stringify(profiles));
-      setCurrentProfileId(profileId);
-      toast({
-        title: "Profile Switched",
-        description: `Switched to ${profile.name}'s account`,
-      });
-      setTimeout(() => navigate("/main"), 500);
-    }
-  };
-
-  const handleAddProfile = () => {
-    navigate("/login-auth");
+  const getInitials = (name: string) => {
+    if (!name) return "U";
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase();
   };
 
   return (
@@ -103,81 +45,73 @@ const ChangeProfiles = () => {
             <CardHeader>
               <CardTitle className="text-2xl">Change Profiles</CardTitle>
               <CardDescription>
-                Switch between your accounts or add a new one
+                Switch between accounts or add a new one
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {/* Existing Profiles */}
-                {profiles.map((profile) => {
-                  const isCurrent = profile.id === currentProfileId;
-                  return (
-                    <Card
-                      key={profile.id}
-                      className={`cursor-pointer transition-all hover:shadow-md ${
-                        isCurrent
-                          ? "border-primary bg-primary/5"
-                          : "border-border"
-                      }`}
-                      onClick={() => !isCurrent && handleSwitchProfile(profile.id)}
-                    >
+              {currentProfile && user ? (
+                <div className="space-y-4">
+                  {/* Current Active Profile */}
+                  <Card className="border-primary bg-primary/5 cursor-pointer hover:shadow-md transition-all">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
                           <Avatar className="h-12 w-12">
-                            <AvatarImage src={profile.avatarUrl} />
-                            <AvatarFallback>
-                              {profile.name
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")}
+                            <AvatarFallback className="bg-primary text-primary-foreground">
+                              {getInitials(currentProfile.name)}
                             </AvatarFallback>
                           </Avatar>
                           <div>
                             <div className="flex items-center gap-2">
-                              <h3 className="font-semibold">{profile.name}</h3>
-                              {isCurrent && (
-                                <Badge variant="default" className="text-xs">
-                                  Current
-                                </Badge>
-                              )}
+                              <h3 className="font-semibold">{currentProfile.name}</h3>
+                              <Badge variant="default" className="text-xs">
+                                Current
+                              </Badge>
                             </div>
                             <p className="text-sm text-muted-foreground">
-                              {profile.email}
+                              {currentProfile.email}
                             </p>
                           </div>
                         </div>
-                        {isCurrent && (
-                          <CheckCircle2 className="h-6 w-6 text-primary" />
-                        )}
+                        <CheckCircle2 className="h-6 w-6 text-primary" />
                       </div>
                     </CardContent>
                   </Card>
-                  );
-                })}
 
-                {/* Add New Profile Button */}
-                <Card
-                  className="cursor-pointer border-dashed border-2 transition-all hover:shadow-md hover:border-primary"
-                  onClick={handleAddProfile}
-                >
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-4">
-                      <div className="h-12 w-12 rounded-full border-2 border-dashed border-muted-foreground flex items-center justify-center">
-                        <Plus className="h-6 w-6 text-muted-foreground" />
+                  {/* Add Another Account */}
+                  <Card
+                    className="cursor-pointer border-dashed border-2 transition-all hover:shadow-md hover:border-primary"
+                    onClick={() => navigate("/login-auth")}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-4">
+                        <div className="h-12 w-12 rounded-full border-2 border-dashed border-muted-foreground flex items-center justify-center">
+                          <Plus className="h-6 w-6 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-muted-foreground">
+                            Add Another Account
+                          </h3>
+                          <p className="text-sm text-muted-foreground">
+                            Sign in with a different account
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="font-semibold text-muted-foreground">
-                          Add Another Account
-                        </h3>
-                        <p className="text-sm text-muted-foreground">
-                          Sign in with a different account
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <UserCircle2 className="h-20 w-20 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No Profile Found</h3>
+                  <p className="text-muted-foreground mb-6">
+                    Please sign up or log in to see your profile.
+                  </p>
+                  <Button onClick={() => navigate("/")}>
+                    Go to Login
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

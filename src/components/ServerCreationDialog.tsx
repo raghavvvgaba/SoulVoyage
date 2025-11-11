@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { Plus, Upload, X } from "lucide-react";
+import { Plus, Upload, X, Globe, Lock } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 
@@ -19,6 +20,7 @@ interface ServerCreationDialogProps {
   onServerCreate: (serverData: {
     name: string;
     icon?: string;
+    isPublic?: boolean;
   }) => void;
 }
 
@@ -27,15 +29,18 @@ export const ServerCreationDialog = ({
   onOpenChange,
   onServerCreate,
 }: ServerCreationDialogProps) => {
-  const [step, setStep] = useState<"initial" | "create" | "join">("initial");
+  const [step, setStep] = useState<"initial" | "privacy" | "create" | "join">("initial");
+  const [isPublic, setIsPublic] = useState<boolean>(true);
   const [serverName, setServerName] = useState("");
   const [serverIcon, setServerIcon] = useState<string | null>(null);
   const [inviteLink, setInviteLink] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   const handleReset = () => {
     setStep("initial");
+    setIsPublic(true);
     setServerName("");
     setServerIcon(null);
     setInviteLink("");
@@ -58,7 +63,7 @@ export const ServerCreationDialog = ({
     }
   };
 
-  const handleCreateServer = () => {
+  const handleCreateServer = async () => {
     if (!serverName.trim()) {
       toast({
         title: "Error",
@@ -68,17 +73,30 @@ export const ServerCreationDialog = ({
       return;
     }
 
-    onServerCreate({
-      name: serverName,
-      icon: serverIcon || undefined,
-    });
+    setIsCreating(true);
+    try {
+      await onServerCreate({
+        name: serverName,
+        icon: serverIcon || undefined,
+        isPublic: isPublic,
+      });
 
-    handleReset();
-    onOpenChange(false);
-    toast({
-      title: "Success",
-      description: `Server "${serverName}" has been created!`,
-    });
+      handleReset();
+      onOpenChange(false);
+      setIsCreating(false);
+      toast({
+        title: "Success",
+        description: `Server "${serverName}" has been created!`,
+      });
+    } catch (error) {
+      console.error("Error creating server:", error);
+      setIsCreating(false);
+      toast({
+        title: "Error",
+        description: "Failed to create server",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleJoinServer = () => {
@@ -121,7 +139,7 @@ export const ServerCreationDialog = ({
           </DialogHeader>
           <div className="space-y-4">
             <Button
-              onClick={() => setStep("create")}
+              onClick={() => setStep("privacy")}
               className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold h-11"
             >
               Create My Own
@@ -137,15 +155,102 @@ export const ServerCreationDialog = ({
         </DialogContent>
       )}
 
+      {step === "privacy" && (
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Choose Server Type</DialogTitle>
+            <DialogDescription>
+              Select whether your server should be public or private
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <RadioGroup 
+              value={isPublic ? "public" : "private"} 
+              onValueChange={(value) => setIsPublic(value === "public")}
+            >
+              <div className="space-y-3">
+                <Label
+                  htmlFor="public"
+                  className="flex items-start space-x-3 p-4 rounded-lg border-2 cursor-pointer hover:bg-accent transition-colors"
+                  style={{
+                    borderColor: isPublic ? "hsl(var(--primary))" : "hsl(var(--border))",
+                    backgroundColor: isPublic ? "hsl(var(--primary) / 0.05)" : "transparent",
+                  }}
+                >
+                  <RadioGroupItem value="public" id="public" />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Globe className="h-5 w-5 text-primary" />
+                      <span className="font-semibold">Public Server</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Anyone can discover and join this server. Visible to all users.
+                    </p>
+                  </div>
+                </Label>
+
+                <Label
+                  htmlFor="private"
+                  className="flex items-start space-x-3 p-4 rounded-lg border-2 cursor-pointer hover:bg-accent transition-colors"
+                  style={{
+                    borderColor: !isPublic ? "hsl(var(--primary))" : "hsl(var(--border))",
+                    backgroundColor: !isPublic ? "hsl(var(--primary) / 0.05)" : "transparent",
+                  }}
+                >
+                  <RadioGroupItem value="private" id="private" />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Lock className="h-5 w-5 text-primary" />
+                      <span className="font-semibold">Private Server</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Invite-only. Only members you invite can see and join this server.
+                    </p>
+                  </div>
+                </Label>
+              </div>
+            </RadioGroup>
+
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setStep("initial")}
+                className="flex-1"
+              >
+                Go Back
+              </Button>
+              <Button onClick={() => setStep("create")} className="flex-1">
+                Next: Server Details
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      )}
+
       {step === "create" && (
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Customize Your Server</DialogTitle>
             <DialogDescription>
-              Give your new server a name and optional icon before launching.
+              Give your {isPublic ? "public" : "private"} server a name and icon
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-6">
+            {/* Server Type Badge */}
+            <div className="flex items-center justify-center gap-2 text-sm bg-muted/50 p-2 rounded">
+              {isPublic ? (
+                <>
+                  <Globe className="h-4 w-4" />
+                  <span>Public Server</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="h-4 w-4" />
+                  <span>Private Server</span>
+                </>
+              )}
+            </div>
+
             {/* Icon Upload Section */}
             <div className="flex justify-center">
               <div className="relative">
@@ -225,16 +330,17 @@ export const ServerCreationDialog = ({
             <div className="flex gap-3">
               <Button
                 variant="outline"
-                onClick={() => setStep("initial")}
+                onClick={() => setStep("privacy")}
                 className="flex-1"
               >
                 Go Back
               </Button>
               <Button
                 onClick={handleCreateServer}
+                disabled={isCreating || !serverName.trim()}
                 className="flex-1 bg-primary hover:bg-primary/90"
               >
-                Create
+                {isCreating ? "Creating..." : "Create"}
               </Button>
             </div>
           </div>

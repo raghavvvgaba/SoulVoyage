@@ -1,6 +1,5 @@
 import { User, LogOut, UserCog, Users } from "lucide-react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,33 +10,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-
-interface Profile {
-  id: string;
-  name: string;
-  email: string;
-  avatarUrl?: string;
-}
+import { useAuth } from "@/context/AuthContext";
 
 export function ProfileMenu() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
+  const { currentProfile, logout } = useAuth();
 
-  useEffect(() => {
-    const currentProfileId = localStorage.getItem("currentProfileId");
-    const profilesJson = localStorage.getItem("profiles");
-    
-    if (currentProfileId && profilesJson) {
-      try {
-        const profiles = JSON.parse(profilesJson);
-        const profile = profiles.find((p: Profile) => p.id === currentProfileId);
-        setCurrentProfile(profile);
-      } catch (e) {
-        console.error("Error parsing profiles:", e);
-      }
-    }
-  }, [location]);
+  // Debug logging
+  console.log("ProfileMenu - currentProfile:", currentProfile);
 
   const getInitials = (name: string): string => {
     if (!name) return "U";
@@ -48,7 +28,8 @@ export function ProfileMenu() {
       .toUpperCase();
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await logout();
     navigate("/");
   };
 
