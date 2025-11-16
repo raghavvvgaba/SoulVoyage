@@ -44,8 +44,25 @@ export const Globe3D = () => {
 
     initializeMap();
 
+    // Prevent default touch behavior on the globe container
+    const container = mapContainerRef.current;
+    const preventDefaultTouch = (e: TouchEvent) => {
+      if (e.touches.length > 1) {
+        // Prevent page zoom on pinch
+        e.preventDefault();
+      }
+    };
+
+    if (container) {
+      container.addEventListener('touchstart', preventDefaultTouch, { passive: false });
+      container.addEventListener('touchmove', preventDefaultTouch, { passive: false });
+    }
+
     return () => {
-      // Don't destroy the map on unmount to preserve interactivity
+      if (container) {
+        container.removeEventListener('touchstart', preventDefaultTouch);
+        container.removeEventListener('touchmove', preventDefaultTouch);
+      }
     };
   }, []);
 
@@ -53,7 +70,20 @@ export const Globe3D = () => {
     <div 
       ref={mapContainerRef}
       className="w-full h-[500px] rounded-lg border border-border bg-card/50 backdrop-blur-sm overflow-hidden"
-      style={{ minHeight: '500px' }}
+      style={{ 
+        minHeight: '500px',
+        touchAction: 'none',
+        WebkitUserSelect: 'none',
+        userSelect: 'none',
+        WebkitTouchCallout: 'none',
+        cursor: 'grab'
+      }}
+      onTouchStart={(e) => {
+        // Prevent default browser behavior
+        if (e.touches.length > 1) {
+          e.preventDefault();
+        }
+      }}
     />
   );
 };

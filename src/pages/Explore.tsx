@@ -6,9 +6,10 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { ProfileMenu } from "@/components/ProfileMenu";
 import { ArrowLeft, Globe, Search, Lock, Globe2, Users } from "lucide-react";
 import Globe3D from "@/components/Globe3D";
-import { db } from "@/lib/firebase";
-import { collection, query, onSnapshot, getDocs } from "firebase/firestore";
+import { db, auth } from "@/lib/firebase";
+import { collection, query, onSnapshot, getDocs, setDoc, doc, where } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/context/AuthContext";
 
 interface Server {
   id: string;
@@ -24,10 +25,12 @@ interface Server {
 const Explore = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { currentProfile } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedServerId, setExpandedServerId] = useState<string | null>(null);
   const [servers, setServers] = useState<Server[]>([]);
   const [loading, setLoading] = useState(true);
+  const [joiningServerId, setJoiningServerId] = useState<string | null>(null);
 
   // Fetch servers from Firestore
   useEffect(() => {
@@ -82,6 +85,64 @@ const Explore = () => {
     server.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const handleJoinServer = async (serverId: string, serverName: string) => {
+    if (!currentProfile || !auth.currentUser) {
+      toast({
+        title: "Error",
+        description: "You must be logged in to join a server",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setJoiningServerId(serverId);
+
+    try {
+      // Check if user is already a member
+      const memberQuery = query(
+        collection(db, "servers", serverId, "members"),
+        where("userId", "==", auth.currentUser.uid)
+      );
+      const memberSnapshot = await getDocs(memberQuery);
+
+      if (!memberSnapshot.empty) {
+        toast({
+          title: "Already a member",
+          description: `You're already a member of ${serverName}`,
+        });
+        setJoiningServerId(null);
+        return;
+      }
+
+      // Add user to server members
+      await setDoc(doc(db, "servers", serverId, "members", auth.currentUser.uid), {
+        userId: auth.currentUser.uid,
+        joinedAt: new Date(),
+        role: "member",
+      });
+
+      toast({
+        title: "Success!",
+        description: `You've joined ${serverName}`,
+      });
+
+      setJoiningServerId(null);
+      
+      // Navigate to the server after a short delay
+      setTimeout(() => {
+        navigate("/main");
+      }, 1000);
+    } catch (error) {
+      console.error("Error joining server:", error);
+      setJoiningServerId(null);
+      toast({
+        title: "Error",
+        description: "Failed to join server. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen">
       {/* Top Bar */}
@@ -117,7 +178,10 @@ const Explore = () => {
           </div>
 
           {/* 3D Globe */}
-          <div className="rounded-lg border border-border overflow-hidden mb-8">
+          <div 
+            className="rounded-lg border border-border overflow-hidden mb-8"
+            style={{ touchAction: 'none' }}
+          >
             <Globe3D />
           </div>
 
@@ -218,16 +282,12 @@ const Explore = () => {
                         <Button 
                           className="w-full" 
                           size="sm"
-                          onClick={() => {
-                            toast({
-                              title: "Feature Coming Soon",
-                              description: server.isPublic 
-                                ? "Join functionality will be available soon"
-                                : "Join request functionality will be available soon",
-                            });
-                          }}
+                          onClick={() => handleJoinServer(server.id, server.name)}
+                          disabled={joiningServerId === server.id}
                         >
-                          {server.isPublic ? "Join This Server" : "Ask to Join"}
+                          {joiningServerId === server.id 
+                            ? "Joining..." 
+                            : server.isPublic ? "Join This Server" : "Ask to Join"}
                         </Button>
                       </div>
                     )}

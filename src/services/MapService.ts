@@ -20,10 +20,27 @@ export class MapService {
     }
 
     try {
-      this.earth = WE.map(containerId);
+      // Initialize map with mobile/touch support options
+      this.earth = WE.map(containerId, {
+        dragging: true,
+        touchZoom: true,
+        scrollWheelZoom: true,
+        doubleClickZoom: true,
+        boxZoom: true,
+        keyboard: true,
+        tap: true,
+        tapTolerance: 15,
+        trackResize: true,
+        worldCopyJump: false,
+        closePopupOnClick: true,
+        bounceAtZoomLimits: true
+      });
+      
       WE.tileLayer('http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
         .addTo(this.earth);
       this.earth.setView([20, 0], 2);
+      
+      console.log('WebGL Earth map initialized with touch controls enabled');
     } catch (error) {
       console.error('Error initializing WebGL Earth map:', error);
     }

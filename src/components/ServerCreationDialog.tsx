@@ -13,6 +13,8 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
+import { db, auth } from "@/lib/firebase";
+import { collection, query, where, getDocs, setDoc, doc } from "firebase/firestore";
 
 interface ServerCreationDialogProps {
   open: boolean;
@@ -99,7 +101,7 @@ export const ServerCreationDialog = ({
     }
   };
 
-  const handleJoinServer = () => {
+  const handleJoinServer = async () => {
     if (!inviteLink.trim()) {
       toast({
         title: "Error",
@@ -109,13 +111,100 @@ export const ServerCreationDialog = ({
       return;
     }
 
-    toast({
-      title: "Feature Coming Soon",
-      description: "Join server functionality will be available soon",
-    });
+    setIsCreating(true);
 
-    handleReset();
-    onOpenChange(false);
+    try {
+      // Extract invite code from URL
+      const inviteCode = inviteLink.split("/invite/").pop()?.split("?")[0];
+      
+      if (!inviteCode) {
+        toast({
+          title: "Error",
+          description: "Invalid invite link format",
+          variant: "destructive",
+        });
+        setIsCreating(false);
+        return;
+      }
+
+      console.log("Looking for server with invite code:", inviteCode);
+
+      // Find server by invite code
+      const serversQuery = query(
+        collection(db, "servers"),
+        where("inviteCode", "==", inviteCode)
+      );
+      
+      const snapshot = await getDocs(serversQuery);
+      
+      if (snapshot.empty) {
+        toast({
+          title: "Error",
+          description: "Invalid invite link. Server not found.",
+          variant: "destructive",
+        });
+        setIsCreating(false);
+        return;
+      }
+
+      const serverDoc = snapshot.docs[0];
+      const serverId = serverDoc.id;
+      const serverData = serverDoc.data();
+
+      // Check if user is authenticated
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        toast({
+          title: "Error",
+          description: "You must be logged in to join a server",
+          variant: "destructive",
+        });
+        setIsCreating(false);
+        return;
+      }
+
+      // Check if user is already a member
+      const memberQuery = query(
+        collection(db, "servers", serverId, "members"),
+        where("userId", "==", currentUser.uid)
+      );
+      const memberSnapshot = await getDocs(memberQuery);
+
+      if (!memberSnapshot.empty) {
+        toast({
+          title: "Already a member",
+          description: `You're already a member of ${serverData.name}`,
+        });
+        setIsCreating(false);
+        handleReset();
+        onOpenChange(false);
+        return;
+      }
+
+      // Add user to server members
+      await setDoc(doc(db, "servers", serverId, "members", currentUser.uid), {
+        userId: currentUser.uid,
+        joinedAt: new Date(),
+        role: "member",
+      });
+
+      toast({
+        title: "Success!",
+        description: `You've joined ${serverData.name}`,
+      });
+
+      handleReset();
+      onOpenChange(false);
+      setIsCreating(false);
+    } catch (error) {
+      console.error("Error joining server:", error);
+      setIsCreating(false);
+      toast({
+        title: "Error",
+        description: "Failed to join server. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const getInitials = (name: string) => {

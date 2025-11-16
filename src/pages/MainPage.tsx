@@ -339,9 +339,11 @@ const MainPage = () => {
     }
 
     console.log("Loading servers for user:", currentProfileId);
-    const serversRef = collection(db, "servers");
     
-    const unsubscribeServers = onSnapshot(serversRef, async (snapshot) => {
+    const loadServers = async () => {
+      const serversRef = collection(db, "servers");
+      const snapshot = await getDocs(serversRef);
+      
       console.log("Servers snapshot:", snapshot.docs.length, "total servers in database");
       
       const serversPromises = snapshot.docs.map(async (docSnap) => {
@@ -372,9 +374,36 @@ const MainPage = () => {
       
       console.log("Loaded servers user is member of:", withCategories.length, "servers");
       setServers(withCategories);
+    };
+
+    // Initial load
+    loadServers();
+    
+    // Set up real-time listener for server changes (name, icon, channels, etc.)
+    const serversRef = collection(db, "servers");
+    const unsubscribeServers = onSnapshot(serversRef, () => {
+      console.log("Server collection changed, reloading servers...");
+      loadServers();
     });
 
-    return () => unsubscribeServers();
+    // Poll for membership changes every 3 seconds when tab is active
+    let pollInterval: NodeJS.Timeout | null = null;
+    
+    const startPolling = () => {
+      pollInterval = setInterval(() => {
+        if (document.visibilityState === 'visible') {
+          console.log("Polling for server membership changes...");
+          loadServers();
+        }
+      }, 3000);
+    };
+    
+    startPolling();
+
+    return () => {
+      unsubscribeServers();
+      if (pollInterval) clearInterval(pollInterval);
+    };
   }, [currentProfileId]);
 
   useEffect(() => {
@@ -611,12 +640,63 @@ const MainPage = () => {
     }
   }, [showInviteDialog, currentServer]);
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(inviteLink);
-    toast({
-      title: "Copied!",
-      description: "Invite link copied to clipboard",
-    });
+  const copyToClipboard = async () => {
+    try {
+      // Try modern clipboard API first
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(inviteLink);
+        toast({
+          title: "Copied!",
+          description: "Invite link copied to clipboard",
+        });
+      } else {
+        // Fallback for mobile/older browsers
+        const textArea = document.createElement("textarea");
+        textArea.value = inviteLink;
+        
+        // Make textarea visible but off-screen for iOS
+        textArea.style.position = "absolute";
+        textArea.style.left = "-9999px";
+        textArea.style.top = "0";
+        textArea.style.opacity = "0";
+        textArea.setAttribute('readonly', '');
+        
+        document.body.appendChild(textArea);
+        
+        // iOS specific selection
+        if (navigator.userAgent.match(/ipad|ipod|iphone/i)) {
+          const range = document.createRange();
+          range.selectNodeContents(textArea);
+          const selection = window.getSelection();
+          if (selection) {
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+          textArea.setSelectionRange(0, 999999);
+        } else {
+          textArea.select();
+        }
+        
+        const successful = document.execCommand('copy');
+        textArea.remove();
+        
+        if (successful) {
+          toast({
+            title: "Copied!",
+            description: "Invite link copied to clipboard",
+          });
+        } else {
+          throw new Error("Copy command failed");
+        }
+      }
+    } catch (error) {
+      console.error("Error copying to clipboard:", error);
+      toast({
+        title: "Could not copy automatically",
+        description: "Please long-press the link and select 'Copy'",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleOpenServerSettings = () => {
