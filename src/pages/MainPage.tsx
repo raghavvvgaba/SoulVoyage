@@ -30,6 +30,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import { db, auth } from "@/lib/firebase";
 import { collection, addDoc, query, where, orderBy, onSnapshot, Timestamp, getDoc, doc, updateDoc, deleteDoc, setDoc, getDocs } from "firebase/firestore";
+import { SERVER_DEFAULTS } from "@/utils/constants";
 
 interface Friend {
   id: string;
@@ -143,8 +144,8 @@ const MainPage = () => {
     if (!server.categories || server.categories.length === 0) {
       return {
         ...server,
-        categories: [{ id: "cat_1", name: "TEXT MESSAGES" }],
-        channels: server.channels?.map(c => ({ ...c, categoryId: c.categoryId || "cat_1" })) || []
+        categories: [SERVER_DEFAULTS.defaultCategory],
+        channels: server.channels?.map(c => ({ ...c, categoryId: c.categoryId || SERVER_DEFAULTS.defaultCategory.id })) || []
       };
     }
     return {
@@ -359,8 +360,8 @@ const MainPage = () => {
             name: serverData.name,
             icon: serverData.icon,
             isPublic: serverData.isPublic,
-            channels: serverData.channels || [{ id: "general_1", name: "general", type: "text", categoryId: "cat_1" }],
-            categories: serverData.categories || [{ id: "cat_1", name: "TEXT MESSAGES" }],
+            channels: serverData.channels || [SERVER_DEFAULTS.defaultChannel],
+            categories: serverData.categories || [SERVER_DEFAULTS.defaultCategory],
           };
         }
         return null;
@@ -416,8 +417,8 @@ const MainPage = () => {
         owner: userId,
         place: "Location",
         description: "",
-        categories: [{ id: "cat_1", name: "TEXT MESSAGES" }],
-        channels: [{ id: "general_1", name: "general", type: "text", categoryId: "cat_1" }],
+        categories: [SERVER_DEFAULTS.defaultCategory],
+        channels: [SERVER_DEFAULTS.defaultChannel],
         createdAt: Timestamp.now(),
       });
 
@@ -568,12 +569,47 @@ const MainPage = () => {
   const currentServer = servers.find(s => s.id === selectedServer);
   const currentChannel = currentServer?.channels?.find(c => c.id === selectedChannel);
 
-  const generateInviteLink = () => {
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-    return `https://soul.gg/${code}`;
+  const generateInviteCode = () => {
+    return Math.random().toString(36).substring(2, 10).toUpperCase();
   };
 
-  const inviteLink = currentServer ? generateInviteLink() : "";
+  const getOrCreateInviteLink = async () => {
+    if (!currentServer || !selectedServer) return "";
+
+    try {
+      // Check if server already has an invite code
+      const serverDoc = await getDoc(doc(db, "servers", selectedServer));
+      if (serverDoc.exists()) {
+        const serverData = serverDoc.data();
+        
+        // If invite code exists, use it
+        if (serverData.inviteCode) {
+          return `${window.location.origin}/invite/${serverData.inviteCode}`;
+        }
+        
+        // Generate new invite code and save to Firestore
+        const newInviteCode = generateInviteCode();
+        await updateDoc(doc(db, "servers", selectedServer), {
+          inviteCode: newInviteCode,
+        });
+        
+        return `${window.location.origin}/invite/${newInviteCode}`;
+      }
+    } catch (error) {
+      console.error("Error getting/creating invite link:", error);
+    }
+    
+    return "";
+  };
+
+  const [inviteLink, setInviteLink] = useState("");
+
+  // Load invite link when dialog opens
+  useEffect(() => {
+    if (showInviteDialog && currentServer) {
+      getOrCreateInviteLink().then(link => setInviteLink(link));
+    }
+  }, [showInviteDialog, currentServer]);
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(inviteLink);

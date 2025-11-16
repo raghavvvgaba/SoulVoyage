@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ProfileMenu } from "@/components/ProfileMenu";
-import { Upload, X, ArrowLeft, Trash2 } from "lucide-react";
+import { Upload, X, ArrowLeft, Trash2, Layers, Pencil, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -51,53 +51,71 @@ const ServerSettings = () => {
 
   // Load servers from Firestore, not localStorage
   const [servers, setServers] = useState<Server[]>(defaultServers);
-
-  const currentServer = servers.find((s) => s.id === serverId);
-  const [editedServerName, setEditedServerName] = useState(currentServer?.name || "");
-  const [editedServerIcon, setEditedServerIcon] = useState<string | null>(
-    currentServer?.icon || null
-  );
+  const [currentServer, setCurrentServer] = useState<Server | null>(null);
+  
+  const [editedServerName, setEditedServerName] = useState("");
+  const [editedServerIcon, setEditedServerIcon] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteServerConfirmOpen, setDeleteServerConfirmOpen] = useState(false);
   const [channelToDelete, setChannelToDelete] = useState<string | null>(null);
+  const [deleteCategoryConfirmOpen, setDeleteCategoryConfirmOpen] = useState(false);
+  const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
   const [serverOwner, setServerOwner] = useState<string | null>(null);
   const [isOwner, setIsOwner] = useState(false);
   const [loading, setLoading] = useState(true);
+  
+  // Edit states
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
+  const [editedCategoryName, setEditedCategoryName] = useState("");
+  const [editedChannelName, setEditedChannelName] = useState("");
 
-  // Check if current user is the server owner
+  // Load server from Firestore and check ownership
   useEffect(() => {
-    const checkOwnership = async () => {
+    const loadServer = async () => {
       try {
-        if (!serverId) return;
+        if (!serverId) {
+          setLoading(false);
+          return;
+        }
         
+        console.log("Loading server:", serverId);
         const serverDoc = await getDoc(doc(db, "servers", serverId));
+        
         if (serverDoc.exists()) {
-          const owner = serverDoc.data().owner;
-          setServerOwner(owner);
+          const serverData = serverDoc.data();
+          const server: Server = {
+            id: serverDoc.id,
+            name: serverData.name || "",
+            icon: serverData.icon || "",
+            channels: serverData.channels || [],
+            categories: serverData.categories || [],
+          };
           
+          console.log("Server loaded:", server);
+          setCurrentServer(server);
+          setServers([server]); // Set servers array for compatibility
+          setEditedServerName(server.name);
+          setEditedServerIcon(server.icon || null);
+          
+          // Check ownership
+          const owner = serverData.owner;
+          setServerOwner(owner);
           const currentUserId = auth.currentUser?.uid;
           setIsOwner(owner === currentUserId);
+        } else {
+          console.log("Server not found:", serverId);
+          setCurrentServer(null);
         }
       } catch (error) {
-        console.error("Error checking ownership:", error);
+        console.error("Error loading server:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    checkOwnership();
+    loadServer();
   }, [serverId]);
-
-  if (!currentServer) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Server not found</h1>
-          <Button onClick={() => navigate("/main")}>Back to Main</Button>
-        </div>
-      </div>
-    );
-  }
 
   if (loading) {
     return (
@@ -105,6 +123,17 @@ const ServerSettings = () => {
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
           <p className="text-muted-foreground mt-4">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentServer) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-4">Server not found</h1>
+          <Button onClick={() => navigate("/main")}>Back to Main</Button>
         </div>
       </div>
     );
@@ -239,6 +268,65 @@ const ServerSettings = () => {
     }
   };
 
+  const handleDeleteCategory = (categoryId: string) => {
+    setCategoryToDelete(categoryId);
+    setDeleteCategoryConfirmOpen(true);
+  };
+
+  const confirmDeleteCategory = async () => {
+    if (!categoryToDelete || !serverId) return;
+
+    try {
+      // Get channels in this category
+      const channelsInCategory = currentServer?.channels?.filter(
+        (c) => c.categoryId === categoryToDelete
+      ) || [];
+
+      // Prevent deletion if category has channels
+      if (channelsInCategory.length > 0) {
+        toast({
+          title: "Cannot delete category",
+          description: `This category has ${channelsInCategory.length} channel(s). Delete all channels first.`,
+          variant: "destructive",
+        });
+        setDeleteCategoryConfirmOpen(false);
+        setCategoryToDelete(null);
+        return;
+      }
+
+      // Remove category from Firestore
+      const updatedCategories = currentServer?.categories?.filter(
+        (cat) => cat.id !== categoryToDelete
+      ) || [];
+
+      await updateDoc(doc(db, "servers", serverId), {
+        categories: updatedCategories,
+      });
+
+      if (currentServer) {
+        setCurrentServer({
+          ...currentServer,
+          categories: updatedCategories,
+        });
+      }
+
+      setDeleteCategoryConfirmOpen(false);
+      setCategoryToDelete(null);
+
+      toast({
+        title: "Success",
+        description: "Category deleted successfully",
+      });
+    } catch (error) {
+      console.error("Error deleting category:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete category",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleDeleteChannel = (channelId: string) => {
     setChannelToDelete(channelId);
     setDeleteConfirmOpen(true);
@@ -265,6 +353,88 @@ const ServerSettings = () => {
       title: "Success",
       description: "Channel deleted successfully",
     });
+  };
+
+  const handleEditCategory = (categoryId: string, currentName: string) => {
+    setEditingCategoryId(categoryId);
+    setEditedCategoryName(currentName);
+  };
+
+  const handleSaveCategory = async () => {
+    if (!editingCategoryId || !serverId || !editedCategoryName.trim()) return;
+
+    try {
+      const updatedCategories = currentServer?.categories?.map((cat) =>
+        cat.id === editingCategoryId ? { ...cat, name: editedCategoryName.trim() } : cat
+      ) || [];
+
+      await updateDoc(doc(db, "servers", serverId), {
+        categories: updatedCategories,
+      });
+
+      if (currentServer) {
+        setCurrentServer({
+          ...currentServer,
+          categories: updatedCategories,
+        });
+      }
+
+      setEditingCategoryId(null);
+      setEditedCategoryName("");
+
+      toast({
+        title: "Success",
+        description: "Category name updated successfully",
+      });
+    } catch (error) {
+      console.error("Error updating category:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update category name",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleEditChannel = (channelId: string, currentName: string) => {
+    setEditingChannelId(channelId);
+    setEditedChannelName(currentName);
+  };
+
+  const handleSaveChannel = async () => {
+    if (!editingChannelId || !serverId || !editedChannelName.trim()) return;
+
+    try {
+      const updatedChannels = currentServer?.channels?.map((ch) =>
+        ch.id === editingChannelId ? { ...ch, name: editedChannelName.trim() } : ch
+      ) || [];
+
+      await updateDoc(doc(db, "servers", serverId), {
+        channels: updatedChannels,
+      });
+
+      if (currentServer) {
+        setCurrentServer({
+          ...currentServer,
+          channels: updatedChannels,
+        });
+      }
+
+      setEditingChannelId(null);
+      setEditedChannelName("");
+
+      toast({
+        title: "Success",
+        description: "Channel name updated successfully",
+      });
+    } catch (error) {
+      console.error("Error updating channel:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update channel name",
+        variant: "destructive",
+      });
+    }
   };
 
   const getInitials = (name: string) => {
@@ -409,6 +579,89 @@ const ServerSettings = () => {
 
             <Separator />
 
+            {/* Categories Section */}
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold">Categories</h2>
+              <div className="space-y-2">
+                {currentServer.categories?.map((category) => (
+                  <div
+                    key={category.id}
+                    className="flex items-center gap-2 p-3 rounded bg-accent/20 justify-between"
+                  >
+                    <div className="flex items-center gap-2 flex-1">
+                      <Layers className="h-4 w-4 text-muted-foreground" />
+                      {editingCategoryId === category.id ? (
+                        <Input
+                          value={editedCategoryName}
+                          onChange={(e) => setEditedCategoryName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveCategory();
+                            if (e.key === 'Escape') {
+                              setEditingCategoryId(null);
+                              setEditedCategoryName("");
+                            }
+                          }}
+                          className="h-7 text-sm flex-1 max-w-xs"
+                          autoFocus
+                        />
+                      ) : (
+                        <span className="text-sm font-medium">{category.name}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground bg-background px-2 py-1 rounded">
+                        {currentServer.channels?.filter((c) => c.categoryId === category.id).length || 0} channels
+                      </span>
+                      {editingCategoryId === category.id ? (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-green-600 hover:text-green-700 hover:bg-green-100"
+                            onClick={handleSaveCategory}
+                          >
+                            <Check className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => {
+                              setEditingCategoryId(null);
+                              setEditedCategoryName("");
+                            }}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 hover:bg-primary/10"
+                            onClick={() => handleEditCategory(category.id, category.name)}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => handleDeleteCategory(category.id)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <Separator />
+
             {/* Channels Section */}
             <div className="space-y-4">
               <h2 className="text-lg font-semibold">Channels</h2>
@@ -426,21 +679,72 @@ const ServerSettings = () => {
                             key={channel.id}
                             className="flex items-center gap-2 p-3 rounded bg-accent/20 justify-between"
                           >
-                            <span className="text-sm">
-                              {channel.type === "voice" ? "🎙" : "#"} {channel.name}
-                            </span>
+                            <div className="flex items-center gap-2 flex-1">
+                              <span className="text-sm">{channel.type === "voice" ? "🎙" : "#"}</span>
+                              {editingChannelId === channel.id ? (
+                                <Input
+                                  value={editedChannelName}
+                                  onChange={(e) => setEditedChannelName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleSaveChannel();
+                                    if (e.key === 'Escape') {
+                                      setEditingChannelId(null);
+                                      setEditedChannelName("");
+                                    }
+                                  }}
+                                  className="h-7 text-sm flex-1 max-w-xs"
+                                  autoFocus
+                                />
+                              ) : (
+                                <span className="text-sm">{channel.name}</span>
+                              )}
+                            </div>
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-muted-foreground bg-background px-2 py-1 rounded">
                                 {channel.type === "voice" ? "Voice" : "Text"}
                               </span>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                onClick={() => handleDeleteChannel(channel.id)}
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
+                              {editingChannelId === channel.id ? (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 text-green-600 hover:text-green-700 hover:bg-green-100"
+                                    onClick={handleSaveChannel}
+                                  >
+                                    <Check className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6"
+                                    onClick={() => {
+                                      setEditingChannelId(null);
+                                      setEditedChannelName("");
+                                    }}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </Button>
+                                </>
+                              ) : (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 hover:bg-primary/10"
+                                    onClick={() => handleEditChannel(channel.id, channel.name)}
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    onClick={() => handleDeleteChannel(channel.id)}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -507,6 +811,27 @@ const ServerSettings = () => {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDeleteServer}
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              Delete
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Category Confirmation Dialog */}
+      <AlertDialog open={deleteCategoryConfirmOpen} onOpenChange={setDeleteCategoryConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Category?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this category. Make sure all channels in this category are deleted first.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex gap-3 justify-end">
+            <AlertDialogCancel onClick={() => setCategoryToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteCategory}
               className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
             >
               Delete

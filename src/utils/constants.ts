@@ -36,10 +36,18 @@ export const CHANNEL_TYPES = {
 } as const;
 
 export const SERVER_DEFAULTS = {
+  // ⚙️ CUSTOMIZE THESE DEFAULT NAMES:
   defaultCategory: {
     id: "cat_1",
-    name: "TEXT MESSAGES",
+    name: "TEXT CHANNELS", // Change this to your preferred category name
   },
+  defaultChannel: {
+    id: "general_1",
+    name: "general-chat", // Change this to your preferred channel name
+    type: "text" as const,
+    categoryId: "cat_1",
+  },
+  // Legacy channels (not used for new servers, kept for compatibility)
   defaultChannels: [
     { id: "1", name: "general", type: "text" as const, categoryId: "cat_1" },
     { id: "2", name: "announcements", type: "text" as const, categoryId: "cat_1" },

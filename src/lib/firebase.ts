@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 // Firebase configuration
@@ -17,6 +17,15 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize Firebase Authentication
 export const auth = getAuth(app);
+
+// Set persistence to LOCAL (persists across tabs and browser sessions)
+setPersistence(auth, browserLocalPersistence)
+  .then(() => {
+    console.log("🔐 Firebase Auth - Persistence set to LOCAL (cross-tab sync enabled)");
+  })
+  .catch((error) => {
+    console.error("❌ Firebase Auth - Error setting persistence:", error);
+  });
 
 // Initialize Firestore
 export const db = getFirestore(app);

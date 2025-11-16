@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "next-themes";
 import {
@@ -11,8 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Chrome, Eye, EyeOff, ArrowLeft, Sun, Moon } from "lucide-react";
+import { Chrome, Eye, EyeOff, ArrowLeft, Sun, Moon, User } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const LoginAuth = () => {
   const navigate = useNavigate();
@@ -22,6 +23,18 @@ const LoginAuth = () => {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [switchingAccount, setSwitchingAccount] = useState<string | null>(null);
+
+  // Check if switching accounts
+  useEffect(() => {
+    const switchEmail = localStorage.getItem("switchingToEmail");
+    if (switchEmail) {
+      setEmail(switchEmail);
+      setSwitchingAccount(switchEmail);
+      localStorage.removeItem("switchingToEmail");
+      console.log("📧 Pre-filled email for account switch:", switchEmail);
+    }
+  }, []);
 
   const stars = useMemo(() => {
     return [...Array(120)].map(() => ({
@@ -144,8 +157,20 @@ const LoginAuth = () => {
         {/* Header */}
         <div className="text-center space-y-1 md:space-y-2">
           <h1 className="text-xl md:text-2xl lg:text-3xl font-bold">SoulVoyage</h1>
-          <p className="text-muted-foreground text-xs md:text-sm lg:text-base">Sign in to your account</p>
+          <p className="text-muted-foreground text-xs md:text-sm lg:text-base">
+            {switchingAccount ? "Complete account switch" : "Sign in to your account"}
+          </p>
         </div>
+
+        {/* Account Switch Alert */}
+        {switchingAccount && (
+          <Alert className="py-2 md:py-3">
+            <User className="h-4 w-4" />
+            <AlertDescription className="text-xs md:text-sm">
+              Switching to <strong>{switchingAccount}</strong>. Please enter your password.
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Email/Password Form */}
         <form onSubmit={handleEmailSignIn} className="space-y-2 md:space-y-2.5 lg:space-y-3">
