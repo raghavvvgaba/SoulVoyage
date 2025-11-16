@@ -164,7 +164,8 @@ const MainPage = () => {
   // Initialize WebSocket connection (for sending messages to server)
   useEffect(() => {
     try {
-      wsRef.current = new WebSocket("ws://localhost:8081");
+      const wsUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8081";
+      wsRef.current = new WebSocket(wsUrl);
 
       wsRef.current.onopen = () => {
         console.log("WebSocket connected");
