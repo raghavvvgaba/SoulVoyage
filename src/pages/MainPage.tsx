@@ -161,22 +161,47 @@ const MainPage = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Initialize WebSocket connection (for sending messages to server)
+  // Initialize WebSocket connection (for sending/receiving messages in real-time)
   useEffect(() => {
     try {
       const wsUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8081";
       wsRef.current = new WebSocket(wsUrl);
 
       wsRef.current.onopen = () => {
-        console.log("WebSocket connected");
+        console.log("✅ WebSocket connected to", wsUrl);
+      };
+
+      wsRef.current.onmessage = (event) => {
+        try {
+          const receivedMessage = JSON.parse(event.data);
+          console.log("📨 Message received from WebSocket:", receivedMessage);
+          
+          // Add the message to the current conversation if it matches
+          setMessages((prevMessages) => {
+            // Check if message already exists (avoid duplicates)
+            const isDuplicate = prevMessages.some(m => m.id === receivedMessage.id);
+            if (isDuplicate) {
+              console.log("Message already exists, skipping duplicate");
+              return prevMessages;
+            }
+            return [...prevMessages, receivedMessage];
+          });
+          
+          // Auto-scroll to the new message
+          setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+          }, 100);
+        } catch (error) {
+          console.error("Error parsing WebSocket message:", error);
+        }
       };
 
       wsRef.current.onerror = (error) => {
-        console.error("WebSocket error:", error);
+        console.error("❌ WebSocket error:", error);
       };
 
       wsRef.current.onclose = () => {
-        console.log("WebSocket disconnected");
+        console.log("⚠️ WebSocket disconnected");
       };
     } catch (error) {
       console.error("WebSocket connection error:", error);
@@ -748,14 +773,23 @@ const MainPage = () => {
       setMessage("");
       
       try {
-        console.log("Saving message to Firestore:", newMessage);
-        // Save to Firestore (Firestore listener will pick it up automatically)
+        console.log("💬 Sending message:", newMessage);
+        
+        // Save to Firestore
         const messagesRef = collection(db, "conversations", conversationId, "messages");
         const docRef = await addDoc(messagesRef, {
           ...newMessage,
           timestamp: Timestamp.now(),
         });
-        console.log("Message saved successfully with ID:", docRef.id);
+        console.log("✅ Message saved to Firestore with ID:", docRef.id);
+        
+        // Send through WebSocket for real-time broadcast
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          console.log("📤 Broadcasting message through WebSocket");
+          wsRef.current.send(JSON.stringify(newMessage));
+        } else {
+          console.warn("⚠️ WebSocket not connected, message saved to Firestore only");
+        }
       } catch (error) {
         console.error("Error sending message:", error);
         toast({
@@ -810,11 +844,22 @@ const MainPage = () => {
     };
     
     try {
+      console.log("📸 Sending photo message:", newMessage);
+      
       const messagesRef = collection(db, "conversations", conversationId, "messages");
       await addDoc(messagesRef, {
         ...newMessage,
         timestamp: Timestamp.now(),
       });
+      
+      // Send through WebSocket for real-time broadcast
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        console.log("📤 Broadcasting photo through WebSocket");
+        wsRef.current.send(JSON.stringify(newMessage));
+      } else {
+        console.warn("⚠️ WebSocket not connected, photo saved to Firestore only");
+      }
+      
       toast({
         title: "Photo Sent",
         description: "Your photo has been shared",

@@ -51,13 +51,20 @@ const wss = new WebSocketServer({ port: WS_PORT });
 
 // Store active connections
 const connections = new Map(); // conversationId -> Set of ws clients
+const clientSubscriptions = new Map(); // ws -> Set of conversationIds
 
 wss.on('connection', (ws) => {
-  console.log('New client connected');
+  console.log('✅ New client connected');
+  clientSubscriptions.set(ws, new Set());
 
   ws.on('message', async (data) => {
     try {
       const message = JSON.parse(data);
+      console.log('📨 Received message:', {
+        from: message.senderName,
+        conversationId: message.conversationId,
+        content: message.content
+      });
       
       // Store message in Firestore
       if (message.conversationId) {
@@ -70,43 +77,56 @@ wss.on('connection', (ws) => {
           content: message.content,
           timestamp: message.timestamp,
           conversationId: message.conversationId,
+          type: message.type || 'text',
+          photoUrl: message.photoUrl || null,
           createdAt: new Date(),
         };
 
         // Add to Firestore
         await messagesCollection.doc(message.id).set(messageData);
+        console.log(`✅ Message saved from ${message.senderName}`);
 
-        // Broadcast to all clients in this conversation
+        // Broadcast to all clients subscribed to this conversation
         if (connections.has(message.conversationId)) {
           const clients = connections.get(message.conversationId);
+          let broadcastCount = 0;
           clients.forEach((client) => {
             if (client.readyState === 1) { // WebSocket.OPEN = 1
               client.send(JSON.stringify(messageData));
+              broadcastCount++;
             }
           });
+          console.log(`📤 Broadcasted to ${broadcastCount} clients in ${message.conversationId}`);
+        } else {
+          console.log(`⚠️ No clients in ${message.conversationId}, message saved to Firestore only`);
         }
-
-        console.log(`Message saved from ${message.senderName}: ${message.content}`);
       }
     } catch (error) {
-      console.error('Error handling message:', error);
+      console.error('❌ Error handling message:', error);
     }
   });
 
   ws.on('close', () => {
     // Remove client from all conversations
-    connections.forEach((clients, conversationId) => {
-      clients.delete(ws);
-      if (clients.size === 0) {
-        connections.delete(conversationId);
-      }
-    });
-    console.log('Client disconnected');
+    const subscriptions = clientSubscriptions.get(ws);
+    if (subscriptions) {
+      subscriptions.forEach((conversationId) => {
+        const clients = connections.get(conversationId);
+        if (clients) {
+          clients.delete(ws);
+          if (clients.size === 0) {
+            connections.delete(conversationId);
+          }
+        }
+      });
+    }
+    clientSubscriptions.delete(ws);
+    console.log('👋 Client disconnected');
   });
 
   ws.on('error', (error) => {
-    console.error('WebSocket error:', error);
+    console.error('❌ WebSocket error:', error);
   });
 });
 
-console.log(`WebSocket server is running on ws://localhost:${WS_PORT}`);
+console.log(`🚀 WebSocket server is running on ws://localhost:${WS_PORT}`);
