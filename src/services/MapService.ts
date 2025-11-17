@@ -1,5 +1,5 @@
 export class MapService {
-  private earth: any;
+  private earth: WE.EarthMap | null = null;
 
   constructor(containerId: string = 'earth-map') {
     this.initializeMap(containerId);
@@ -33,7 +33,7 @@ export class MapService {
         trackResize: true,
         worldCopyJump: false,
         closePopupOnClick: true,
-        bounceAtZoomLimits: true
+        bounceAtZoomLimits: true,
       });
       
       WE.tileLayer('http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
@@ -41,7 +41,7 @@ export class MapService {
       this.earth.setView([20, 0], 2);
       
       console.log('WebGL Earth map initialized with touch controls enabled');
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error initializing WebGL Earth map:', error);
     }
   }
@@ -66,7 +66,7 @@ export class MapService {
     this.earth.setView([lat, lng], zoom);
   }
 
-  public getMap(): any {
+  public getMap(): WE.EarthMap | null {
     return this.earth;
   }
 

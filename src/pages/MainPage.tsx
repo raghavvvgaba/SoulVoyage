@@ -1265,9 +1265,6 @@ const MainPage = () => {
         console.error("Request not found");
         return;
       }
-
-      const currentProfileId = currentProfileId;
-      console.log("Current profile ID:", currentProfileId);
       
       if (!currentProfileId) {
         console.error("No current profile ID");
@@ -2234,7 +2231,6 @@ const MainPage = () => {
                 return allMessagesOwnedByUser && (
                   <Button
                     onClick={async () => {
-                      const currentProfileId = currentProfileId || "unknown";
                       try {
                         for (const messageId of selectedMessages) {
                           const message = messages.find(m => m.id === messageId);

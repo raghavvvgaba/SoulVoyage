@@ -38,13 +38,57 @@ const getDeviceId = (): string => {
   return deviceId;
 };
 
+const generateUserId = (): string => {
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`.toUpperCase();
+};
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [currentProfile, setCurrentProfile] = useState<UserProfile | null>(null);
   const [previousAccounts, setPreviousAccounts] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchUserProfile = async (userId: string) => {
+  const ensureUserProfileExists = async (firebaseUser: User) => {
+    try {
+      const userRef = doc(db, "users", firebaseUser.uid);
+      const userDoc = await getDoc(userRef);
+
+      if (!userDoc.exists()) {
+        console.warn("⚠️ AuthContext - No profile found for user", firebaseUser.uid);
+        return;
+      }
+
+      const data = userDoc.data() || {};
+      const profileUpdates: Record<string, unknown> = {};
+
+      if ((!data.name || data.name.trim().length === 0) && firebaseUser.displayName) {
+        profileUpdates.name = firebaseUser.displayName;
+      }
+
+      if (!data.email && firebaseUser.email) {
+        profileUpdates.email = firebaseUser.email;
+      }
+
+      if (!data.userId) {
+        profileUpdates.userId = generateUserId();
+      }
+
+      if (firebaseUser.photoURL && data.avatarUrl !== firebaseUser.photoURL) {
+        profileUpdates.avatarUrl = firebaseUser.photoURL;
+      }
+
+      if (Object.keys(profileUpdates).length > 0) {
+        await setDoc(userRef, profileUpdates, { merge: true });
+        console.log("✅ AuthContext - Updated profile for user", firebaseUser.uid, profileUpdates);
+      }
+    } catch (error) {
+      console.error("❌ AuthContext - Failed to ensure user profile exists:", error);
+    }
+  };
+
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const fetchUserProfile = async (userId: string, attempt = 0): Promise<void> => {
     try {
       console.log("AuthContext - Fetching profile for userId:", userId);
       const userDoc = await getDoc(doc(db, "users", userId));
@@ -64,8 +108,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         
         // Save to device's logged-in accounts
         await saveLoggedInAccount(profile);
+      } else if (attempt < 3) {
+        console.warn(`AuthContext - User document missing for ${userId}. Retrying... (attempt ${attempt + 1})`);
+        await wait(300 * (attempt + 1));
+        await fetchUserProfile(userId, attempt + 1);
       } else {
-        console.log("AuthContext - User document does not exist for:", userId);
+        console.error("AuthContext - User document does not exist after retries for:", userId);
       }
     } catch (error) {
       console.error("Error fetching user profile:", error);
@@ -144,6 +192,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       setUser(currentUser);
       if (currentUser) {
+        await ensureUserProfileExists(currentUser);
         await fetchUserProfile(currentUser.uid);
       } else {
         console.log("⚠️ AuthContext - User is NULL - logged out or not authenticated");

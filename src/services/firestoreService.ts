@@ -14,7 +14,12 @@ import {
   setDoc,
   getDocs,
 } from "firebase/firestore";
-import type { Friend, FriendRequest, Message, Server } from "@/types";
+import type { Friend, FriendRequest, Message, Poll, PollOption, Server } from "@/types";
+
+type AdditionalMessageData = {
+  photoUrl?: string;
+  poll?: Poll;
+};
 
 // Helper to generate consistent conversation IDs
 export const getConversationId = (userId1: string, userId2: string): string => {
@@ -144,7 +149,7 @@ export const sendMessage = async (
   senderName: string,
   content: string,
   type: "text" | "photo" | "poll" = "text",
-  additionalData?: { photoUrl?: string; poll?: any }
+  additionalData?: AdditionalMessageData
 ): Promise<void> => {
   const messageData = {
     senderId,
@@ -294,9 +299,9 @@ export const voteOnPoll = async (
   const messageDoc = await getDoc(messageRef);
 
   if (messageDoc.exists()) {
-    const poll = messageDoc.data()?.poll;
+    const poll = messageDoc.data()?.poll as Poll | undefined;
     if (poll) {
-      const updatedOptions = poll.options.map((option: any) => {
+      const updatedOptions: PollOption[] = poll.options.map((option: PollOption) => {
         if (option.id === optionId) {
           const votes = option.votes || [];
           if (!votes.includes(userId)) {

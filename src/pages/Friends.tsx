@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, query, where, orderBy, onSnapshot, updateDoc, deleteDoc, doc, Timestamp, setDoc } from "firebase/firestore";
+import { FirebaseError } from "firebase/app";
 
 interface Friend {
   id: string;
@@ -182,13 +183,22 @@ const Friends = () => {
         title: "Friend Request Accepted",
         description: `${request.fromUserName || request.name} has been added to your friends`,
       });
-    } catch (error: any) {
-      console.error("❌ Error accepting friend request:", error);
-      console.error("Error code:", error.code);
-      console.error("Error message:", error.message);
+    } catch (error: unknown) {
+      let description = "Failed to accept friend request";
+
+      if (error instanceof FirebaseError) {
+        console.error("❌ Error accepting friend request:", error.code, error.message);
+        description = `Failed to accept friend request: ${error.message}`;
+      } else if (error instanceof Error) {
+        console.error("❌ Error accepting friend request:", error.message);
+        description = `Failed to accept friend request: ${error.message}`;
+      } else {
+        console.error("❌ Error accepting friend request:", error);
+      }
+
       toast({
         title: "Error",
-        description: `Failed to accept friend request: ${error.message || 'Unknown error'}`,
+        description,
         variant: "destructive",
       });
     }

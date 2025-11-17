@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
-import type { Message } from "@/types";
+import type { Message, Poll } from "@/types";
 import {
   subscribeMessages,
   sendMessage,
@@ -54,7 +54,7 @@ export const useMessages = (
     content: string,
     senderName: string,
     type: "text" | "photo" | "poll" = "text",
-    additionalData?: { photoUrl?: string; poll?: any }
+    additionalData?: { photoUrl?: string; poll?: Poll }
   ) => {
     if (!selectedFriendId || !currentProfileId || !content.trim()) return;
 

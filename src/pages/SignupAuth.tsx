@@ -3,14 +3,17 @@ import { useNavigate } from "react-router-dom";
 import { useTheme } from "next-themes";
 import {
   createUserWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
 } from "firebase/auth";
+import { FirebaseError } from "firebase/app";
 import { auth, db } from "@/lib/firebase";
-import { collection, addDoc, setDoc, doc, Timestamp } from "firebase/firestore";
+import { setDoc, doc, Timestamp, getDoc } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, EyeOff, ArrowLeft, Sun, Moon } from "lucide-react";
+import { Eye, EyeOff, ArrowLeft, Sun, Moon, Chrome } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 
 const SignupAuth = () => {
@@ -144,16 +147,22 @@ const SignupAuth = () => {
         description: "Account created successfully",
       });
       setTimeout(() => navigate("/main"), 500);
-    } catch (error: any) {
+    } catch (error: unknown) {
       setLoading(false);
       let errorMessage = "Failed to create account";
       
-      if (error.code === "auth/email-already-in-use") {
-        errorMessage = "Email already registered";
-      } else if (error.code === "auth/weak-password") {
-        errorMessage = "Password is too weak";
-      } else if (error.code === "auth/invalid-email") {
-        errorMessage = "Invalid email format";
+      if (error instanceof FirebaseError) {
+        if (error.code === "auth/email-already-in-use") {
+          errorMessage = "Email already registered";
+        } else if (error.code === "auth/weak-password") {
+          errorMessage = "Password is too weak";
+        } else if (error.code === "auth/invalid-email") {
+          errorMessage = "Invalid email format";
+        } else {
+          errorMessage = error.message;
+        }
+      } else if (error instanceof Error && error.message) {
+        errorMessage = error.message;
       }
       
       toast({
@@ -162,7 +171,78 @@ const SignupAuth = () => {
         variant: "destructive",
       });
       
-      console.error("Signup error:", error.code, error.message);
+      console.error("Signup error:", error);
+    }
+  };
+
+  const handleGoogleSignUp = async () => {
+    setLoading(true);
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+
+      if (!user) {
+        throw new Error("Google sign-up failed. Please try again.");
+      }
+
+      const trimmedEmail = user.email ? user.email.trim().toLowerCase() : "";
+      const userDocRef = doc(db, "users", user.uid);
+      const userDocSnap = await getDoc(userDocRef);
+      const existingData = userDocSnap.exists() ? userDocSnap.data() : null;
+      const customUserId = existingData?.userId || generateUserId();
+      const fullName = user.displayName?.trim() || existingData?.name || trimmedEmail || "New SoulVoyager";
+
+      const profileData: Record<string, unknown> = {
+        id: user.uid,
+        name: fullName,
+        userId: customUserId,
+        provider: "google",
+        lastLoginAt: Timestamp.now(),
+      };
+
+      if (trimmedEmail) {
+        profileData.email = trimmedEmail;
+      }
+
+      if (user.photoURL) {
+        profileData.avatarUrl = user.photoURL;
+      }
+
+      if (!existingData?.createdAt) {
+        profileData.createdAt = Timestamp.now();
+      }
+
+      console.log("SignupAuth - Upserting Google user profile:", user.uid, profileData);
+      await setDoc(userDocRef, profileData, { merge: true });
+
+      toast({
+        title: "Success",
+        description: "Signed up with Google successfully",
+      });
+      setTimeout(() => navigate("/main"), 500);
+    } catch (error: unknown) {
+      setLoading(false);
+      let errorMessage = "Failed to sign up with Google";
+
+      if (error instanceof FirebaseError) {
+        if (error.code === "auth/popup-closed-by-user") {
+          errorMessage = "Google sign-up was cancelled";
+        } else if (error.code === "auth/cancelled-popup-request") {
+          errorMessage = "Another Google sign-up is already in progress";
+        } else {
+          errorMessage = error.message;
+        }
+      } else if (error instanceof Error && error.message) {
+        errorMessage = error.message;
+      }
+
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
     }
   };
 
@@ -352,6 +432,23 @@ const SignupAuth = () => {
               {loading ? "Creating..." : password && getPasswordStrength(password) < 4 ? "Password too weak" : "Sign Up with Email"}
             </Button>
           </form>
+
+          <div className="relative my-3 md:my-4 lg:my-5">
+            <Separator />
+            <span className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 px-2 text-xs text-muted-foreground">
+              OR
+            </span>
+          </div>
+
+          <Button
+            onClick={handleGoogleSignUp}
+            variant="outline"
+            className="w-full gap-2 h-8 md:h-9 lg:h-10 text-xs md:text-sm lg:text-base"
+            disabled={loading}
+          >
+            <Chrome className="h-3 md:h-4 lg:h-5 w-3 md:w-4 lg:w-5" />
+            {loading ? "Processing..." : "Sign Up with Google"}
+          </Button>
 
           {/* Sign In Link */}
           <div className="text-center text-xs md:text-sm lg:text-base">

@@ -5,15 +5,18 @@ import {
   signInWithEmailAndPassword,
   signInWithPopup,
   GoogleAuthProvider,
+  signOut,
 } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { FirebaseError } from "firebase/app";
+import { auth, db } from "@/lib/firebase";
+import { doc, getDoc } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Chrome, Eye, EyeOff, ArrowLeft, Sun, Moon, User } from "lucide-react";
-import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
 
 const LoginAuth = () => {
   const navigate = useNavigate();
@@ -66,18 +69,22 @@ const LoginAuth = () => {
         description: "Signed in successfully",
       });
       setTimeout(() => navigate("/main"), 500);
-    } catch (error: any) {
+    } catch (error: unknown) {
       setLoading(false);
       let errorMessage = "Failed to sign in";
       
-      if (error.code === "auth/user-not-found") {
-        errorMessage = "No account found with this email";
-      } else if (error.code === "auth/wrong-password") {
-        errorMessage = "Incorrect password";
-      } else if (error.code === "auth/invalid-credential") {
-        errorMessage = "Email or password is incorrect";
-      } else if (error.code === "auth/invalid-email") {
-        errorMessage = "Invalid email format";
+      if (error instanceof FirebaseError) {
+        if (error.code === "auth/user-not-found") {
+          errorMessage = "No account found with this email";
+        } else if (error.code === "auth/wrong-password") {
+          errorMessage = "Incorrect password";
+        } else if (error.code === "auth/invalid-credential") {
+          errorMessage = "Email or password is incorrect";
+        } else if (error.code === "auth/invalid-email") {
+          errorMessage = "Invalid email format";
+        }
+      } else if (error instanceof Error && error.message) {
+        errorMessage = error.message;
       }
       
       toast({
@@ -86,7 +93,7 @@ const LoginAuth = () => {
         variant: "destructive",
       });
       
-      console.error("Login error:", error.code, error.message);
+      console.error("Login error:", error);
     }
   };
 
@@ -94,23 +101,51 @@ const LoginAuth = () => {
     setLoading(true);
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      provider.setCustomParameters({ prompt: "select_account" });
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+
+      if (!user) {
+        throw new Error("Google sign-in failed. Please try again.");
+      }
+
+      const profileDoc = await getDoc(doc(db, "users", user.uid));
+      if (!profileDoc.exists()) {
+        await signOut(auth);
+        throw new Error("No account found for this Google ID. Please sign up first.");
+      }
+
       toast({
         title: "Success",
         description: "Signed in with Google successfully",
       });
       setTimeout(() => navigate("/main"), 500);
-    } catch (error: any) {
-      setLoading(false);
+    } catch (error: unknown) {
+      let errorMessage = "Failed to sign in with Google";
+
+      if (error instanceof FirebaseError) {
+        if (error.code === "auth/popup-closed-by-user") {
+          errorMessage = "Google sign-in was cancelled";
+        } else if (error.code === "auth/cancelled-popup-request") {
+          errorMessage = "Another Google sign-in is already in progress";
+        } else if (error.code === "auth/account-exists-with-different-credential") {
+          errorMessage = "This Google account is linked to a different sign-in method";
+        } else {
+          errorMessage = error.message;
+        }
+      } else if (error instanceof Error && error.message) {
+        errorMessage = error.message;
+      }
+
       toast({
         title: "Error",
-        description: error.message || "Failed to sign in with Google",
+        description: errorMessage,
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
     }
   };
-
-
 
   return (
     <div className={`h-screen w-screen flex items-center justify-center p-4 relative overflow-hidden ${theme === "dark" ? "bg-gradient-to-br from-slate-950 to-slate-900" : "bg-gradient-to-br from-slate-50 to-slate-100"}`}>
