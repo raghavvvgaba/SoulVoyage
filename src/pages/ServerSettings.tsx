@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { db, auth } from "@/lib/firebase";
-import { deleteDoc, doc, updateDoc, getDoc } from "firebase/firestore";
+import { deleteDoc, doc, updateDoc, getDoc, collection, getDocs } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ProfileMenu } from "@/components/ProfileMenu";
-import { Upload, X, ArrowLeft, Trash2, Layers, Pencil, Check } from "lucide-react";
+import { Upload, X, ArrowLeft, Trash2, Layers, Pencil, Check, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -27,6 +27,14 @@ interface Server {
   icon?: string;
   channels?: Channel[];
   categories?: Category[];
+  createdAt?: any;
+}
+
+interface Member {
+  id: string;
+  name: string;
+  role: string;
+  joinedAt: any;
 }
 
 interface Category {
@@ -69,6 +77,10 @@ const ServerSettings = () => {
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const [editedCategoryName, setEditedCategoryName] = useState("");
   const [editedChannelName, setEditedChannelName] = useState("");
+  
+  // Member states
+  const [members, setMembers] = useState<Member[]>([]);
+  const [showMembersList, setShowMembersList] = useState(false);
 
   // Load server from Firestore and check ownership
   useEffect(() => {
@@ -90,6 +102,7 @@ const ServerSettings = () => {
             icon: serverData.icon || "",
             channels: serverData.channels || [],
             categories: serverData.categories || [],
+            createdAt: serverData.createdAt,
           };
           
           console.log("Server loaded:", server);
@@ -103,6 +116,9 @@ const ServerSettings = () => {
           setServerOwner(owner);
           const currentUserId = auth.currentUser?.uid;
           setIsOwner(owner === currentUserId);
+          
+          // Load members
+          await loadMembers();
         } else {
           console.log("Server not found:", serverId);
           setCurrentServer(null);
@@ -116,6 +132,38 @@ const ServerSettings = () => {
 
     loadServer();
   }, [serverId]);
+  
+  // Load members from Firestore
+  const loadMembers = async () => {
+    if (!serverId) return;
+    
+    try {
+      const membersRef = collection(db, "servers", serverId, "members");
+      const membersSnapshot = await getDocs(membersRef);
+      
+      const membersList: Member[] = [];
+      
+      for (const memberDoc of membersSnapshot.docs) {
+        const memberData = memberDoc.data();
+        
+        // Fetch user name from users collection
+        const userDoc = await getDoc(doc(db, "users", memberDoc.id));
+        const userName = userDoc.exists() ? userDoc.data().name : "Unknown User";
+        
+        membersList.push({
+          id: memberDoc.id,
+          name: userName,
+          role: memberData.role || "member",
+          joinedAt: memberData.joinedAt,
+        });
+      }
+      
+      console.log("Loaded members:", membersList);
+      setMembers(membersList);
+    } catch (error) {
+      console.error("Error loading members:", error);
+    }
+  };
 
   if (loading) {
     return (
@@ -449,7 +497,7 @@ const ServerSettings = () => {
   return (
     <div className="flex h-screen">
       {/* Main Settings Content */}
-      <div className="flex-1 flex flex-col">
+      <div className={`flex-1 flex flex-col transition-all ${showMembersList ? "mr-80" : ""}`}>
         {/* Top Bar */}
         <div className="h-14 border-b border-border flex items-center justify-between px-6 bg-card/30 backdrop-blur-sm">
           <div className="flex items-center gap-3">
@@ -567,12 +615,31 @@ const ServerSettings = () => {
                 <div className="space-y-2">
                   <p className="text-sm font-medium text-muted-foreground">Created</p>
                   <p className="text-sm">
-                    {new Date(parseInt(currentServer.id)).toLocaleDateString("en-US", {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}
+                    {currentServer.createdAt 
+                      ? new Date(currentServer.createdAt.seconds * 1000).toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "Invalid Date"}
                   </p>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-muted-foreground">Members</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm">{members.length} member(s)</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => setShowMembersList(true)}
+                    >
+                      <Users className="h-3 w-3" />
+                      Show all members
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -776,6 +843,64 @@ const ServerSettings = () => {
           </div>
         </div>
       </div>
+
+      {/* Member List Panel */}
+      {showMembersList && (
+        <div className="fixed right-0 top-0 bottom-0 w-80 bg-card border-l border-border shadow-2xl flex flex-col z-50">
+          {/* Panel Header */}
+          <div className="h-14 border-b border-border flex items-center justify-between px-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowMembersList(false)}
+              className="h-9 w-9"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <h2 className="text-lg font-semibold">Members</h2>
+            <div className="w-9" /> {/* Spacer for center alignment */}
+          </div>
+
+          {/* Member Count */}
+          <div className="px-4 py-3 border-b border-border">
+            <p className="text-sm text-muted-foreground">
+              {members.length} member{members.length !== 1 ? "s" : ""}
+            </p>
+          </div>
+
+          {/* Members List */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            {members.length > 0 ? (
+              members.map((member) => (
+                <div
+                  key={member.id}
+                  className="flex items-center gap-3 p-3 rounded-lg bg-accent/20 hover:bg-accent/30 transition-colors"
+                >
+                  <Avatar className="h-10 w-10">
+                    <AvatarFallback className="bg-primary text-primary-foreground text-sm">
+                      {member.name
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")
+                        .toUpperCase()
+                        .slice(0, 2)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{member.name}</p>
+                    <p className="text-xs text-muted-foreground capitalize">{member.role}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p className="text-sm">No members found</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Delete Channel Confirmation Dialog */}
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
