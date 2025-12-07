@@ -163,25 +163,28 @@ const MainPage = () => {
 
   // Initialize WebSocket connection (for sending/receiving messages in real-time)
   useEffect(() => {
+    // Only attempt WebSocket connection if explicitly enabled
+    if (!import.meta.env.VITE_WS_URL) {
+      return; // Skip WebSocket if not explicitly configured
+    }
+
     try {
-      const wsUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8081";
+      const wsUrl = import.meta.env.VITE_WS_URL;
       wsRef.current = new WebSocket(wsUrl);
 
       wsRef.current.onopen = () => {
-        console.log("✅ WebSocket connected to", wsUrl);
+        // WebSocket connected
       };
 
       wsRef.current.onmessage = (event) => {
         try {
           const receivedMessage = JSON.parse(event.data);
-          console.log("📨 Message received from WebSocket:", receivedMessage);
           
           // Add the message to the current conversation if it matches
           setMessages((prevMessages) => {
             // Check if message already exists (avoid duplicates)
             const isDuplicate = prevMessages.some(m => m.id === receivedMessage.id);
             if (isDuplicate) {
-              console.log("Message already exists, skipping duplicate");
               return prevMessages;
             }
             return [...prevMessages, receivedMessage];
@@ -201,10 +204,10 @@ const MainPage = () => {
       };
 
       wsRef.current.onclose = () => {
-        console.log("⚠️ WebSocket disconnected");
+        // WebSocket disconnected
       };
     } catch (error) {
-      console.error("WebSocket connection error:", error);
+      // WebSocket connection error
     }
 
     return () => {
@@ -220,11 +223,8 @@ const MainPage = () => {
   // Load friends from Firestore in real-time
   useEffect(() => {
     if (!currentProfileId) {
-      console.log("No profile ID found");
       return;
     }
-    
-    console.log("Current Profile ID:", currentProfileId);
 
     try {
       // Load friends from Firestore
@@ -232,12 +232,10 @@ const MainPage = () => {
       const friendsDocRef = collection(userDocRef, "friends");
       
       const unsubscribeFriends = onSnapshot(friendsDocRef, (snapshot) => {
-        console.log("Friends snapshot:", snapshot.docs.length, "friends found");
         const firebaseFriends = snapshot.docs.map((doc) => ({
           id: doc.id,
           name: doc.data().name,
         }));
-        console.log("Friends from Firestore:", firebaseFriends);
         setFriends(firebaseFriends);
       });
 
@@ -250,7 +248,6 @@ const MainPage = () => {
   // Load friend requests from Firestore in real-time
   useEffect(() => {
     if (!currentProfileId) {
-      console.log("No profile ID found");
       return;
     }
 
@@ -264,9 +261,7 @@ const MainPage = () => {
       );
 
       const unsubscribeFriendRequests = onSnapshot(q, (snapshot) => {
-        console.log("Friend requests snapshot:", snapshot.docs.length, "requests found");
         const firebaseFriendRequests = snapshot.docs.map((doc) => {
-          console.log("Friend request:", doc.data());
           return {
             id: doc.id,
             name: doc.data().fromUserName,
@@ -288,7 +283,6 @@ const MainPage = () => {
     if (!otherUserId || !currentProfileId) return "";
     // Create a sorted, consistent ID that both users will use
     const convId = [currentProfileId, otherUserId].sort().join("_");
-    console.log("Generated conversationId:", convId, "from", currentProfileId, "and", otherUserId);
     return convId;
   };
 
@@ -304,10 +298,7 @@ const MainPage = () => {
       conversationId = `server_${selectedServer}_channel_${selectedChannel}`;
     }
     
-    console.log("Messages listener setup - conversationId:", conversationId, "type:", showDirectMessages ? "DM" : "Server Channel");
-    
-    if (!conversationId) {
-      console.log("No conversation ID, unsubscribing from messages");
+        if (!conversationId) {
       if (unsubscribeRef.current) {
         unsubscribeRef.current();
         unsubscribeRef.current = null;
@@ -320,12 +311,9 @@ const MainPage = () => {
       const messagesRef = collection(db, "conversations", conversationId, "messages");
       const q = query(messagesRef, orderBy("timestamp", "asc"));
 
-      console.log("Setting up listener for messages");
       unsubscribeRef.current = onSnapshot(q, (snapshot) => {
-        console.log("Messages snapshot received:", snapshot.docs.length, "messages");
         const firestoreMessages = snapshot.docs.map((doc) => {
           const data = doc.data();
-          console.log("Message:", data);
           return {
             id: doc.id,
             senderId: data.senderId,
@@ -781,11 +769,8 @@ const MainPage = () => {
           ...newMessage,
           timestamp: Timestamp.now(),
         });
-        console.log("✅ Message saved to Firestore with ID:", docRef.id);
-        
         // Send through WebSocket for real-time broadcast
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          console.log("📤 Broadcasting message through WebSocket");
           wsRef.current.send(JSON.stringify(newMessage));
         } else {
           console.warn("⚠️ WebSocket not connected, message saved to Firestore only");

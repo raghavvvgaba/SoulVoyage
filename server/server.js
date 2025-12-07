@@ -60,13 +60,7 @@ wss.on('connection', (ws) => {
   ws.on('message', async (data) => {
     try {
       const message = JSON.parse(data);
-      console.log('📨 Received message:', {
-        from: message.senderName,
-        conversationId: message.conversationId,
-        content: message.content
-      });
-      
-      // Store message in Firestore
+            // Store message in Firestore
       if (message.conversationId) {
         const messagesCollection = db.collection('conversations').doc(message.conversationId).collection('messages');
         
@@ -84,21 +78,15 @@ wss.on('connection', (ws) => {
 
         // Add to Firestore
         await messagesCollection.doc(message.id).set(messageData);
-        console.log(`✅ Message saved from ${message.senderName}`);
 
         // Broadcast to all clients subscribed to this conversation
         if (connections.has(message.conversationId)) {
           const clients = connections.get(message.conversationId);
-          let broadcastCount = 0;
           clients.forEach((client) => {
             if (client.readyState === 1) { // WebSocket.OPEN = 1
               client.send(JSON.stringify(messageData));
-              broadcastCount++;
             }
           });
-          console.log(`📤 Broadcasted to ${broadcastCount} clients in ${message.conversationId}`);
-        } else {
-          console.log(`⚠️ No clients in ${message.conversationId}, message saved to Firestore only`);
         }
       }
     } catch (error) {
