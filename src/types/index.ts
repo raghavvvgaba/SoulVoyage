@@ -39,6 +39,12 @@ export interface Message {
   poll?: Poll;
   deletedForEveryone?: boolean;
   deletedFor?: string[];
+  replyTo?: {
+    messageId: string;
+    senderId: string;
+    senderName: string;
+    content: string;
+  };
 }
 
 export interface Channel {

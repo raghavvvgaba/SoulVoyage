@@ -60,31 +60,15 @@ wss.on('connection', (ws) => {
   ws.on('message', async (data) => {
     try {
       const message = JSON.parse(data);
-            // Store message in Firestore
+
+      // Broadcast message to all clients subscribed to this conversation
       if (message.conversationId) {
-        const messagesCollection = db.collection('conversations').doc(message.conversationId).collection('messages');
-        
-        const messageData = {
-          id: message.id,
-          senderId: message.senderId,
-          senderName: message.senderName,
-          content: message.content,
-          timestamp: message.timestamp,
-          conversationId: message.conversationId,
-          type: message.type || 'text',
-          photoUrl: message.photoUrl || null,
-          createdAt: new Date(),
-        };
-
-        // Add to Firestore
-        await messagesCollection.doc(message.id).set(messageData);
-
         // Broadcast to all clients subscribed to this conversation
         if (connections.has(message.conversationId)) {
           const clients = connections.get(message.conversationId);
           clients.forEach((client) => {
             if (client.readyState === 1) { // WebSocket.OPEN = 1
-              client.send(JSON.stringify(messageData));
+              client.send(JSON.stringify(message));
             }
           });
         }

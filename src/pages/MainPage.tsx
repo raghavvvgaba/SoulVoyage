@@ -6,7 +6,8 @@ import { ServerCreationDialog } from "@/components/ServerCreationDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { UserPlus, Users, Plus, Send, MessageSquare, ChevronDown, UserCheck, Settings, Layers, Copy, FileText, Image, Video, PieChart, Trash2, CheckSquare, X, Globe } from "lucide-react";
+import { UserPlus, Users, Plus, Send, MessageSquare, ChevronDown, UserCheck, Settings, Layers, Copy, FileText, Image, Video, PieChart, Trash2, CheckSquare, X, Globe, Smile, Search, Reply } from "lucide-react";
+import { useTheme } from "next-themes";
 import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
@@ -31,6 +32,7 @@ import { useAuth } from "@/context/AuthContext";
 import { db, auth } from "@/lib/firebase";
 import { collection, addDoc, query, where, orderBy, onSnapshot, Timestamp, getDoc, doc, updateDoc, deleteDoc, setDoc, getDocs } from "firebase/firestore";
 import { SERVER_DEFAULTS } from "@/utils/constants";
+import Picker from "emoji-picker-react";
 
 interface Friend {
   id: string;
@@ -71,6 +73,12 @@ interface Message {
   poll?: Poll;
   deletedForEveryone?: boolean;
   deletedFor?: string[];
+  replyTo?: {
+    messageId: string;
+    senderId: string;
+    senderName: string;
+    content: string;
+  };
 }
 
 interface Server {
@@ -98,6 +106,7 @@ const MainPage = () => {
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const { currentProfile, user } = useAuth();
+  const { theme } = useTheme();
   const [message, setMessage] = useState("");
   const [selectedServer, setSelectedServer] = useState<string | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
@@ -123,10 +132,13 @@ const MainPage = () => {
   const [showPollDialog, setShowPollDialog] = useState(false);
   const [pollTitle, setPollTitle] = useState("");
   const [pollOptions, setPollOptions] = useState(["", ""]);
+  const [showEmojiSearchInterface, setShowEmojiSearchInterface] = useState(false);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
   const [selectedMessages, setSelectedMessages] = useState<Set<string>>(new Set());
   const [messageContextMenu, setMessageContextMenu] = useState<{ messageId: string; x: number; y: number } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
+  const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
   const [fullscreenPhotoUrl, setFullscreenPhotoUrl] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
@@ -139,6 +151,57 @@ const MainPage = () => {
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
   const defaultServers: Server[] = [];
+
+  const handleEmojiSearchSelect = (emojiObject: any) => {
+    if (emojiObject && emojiObject.emoji) {
+      setMessage(prev => prev + emojiObject.emoji);
+    }
+    // Don't close the picker after selecting an emoji
+  };
+
+  // Handle reply to message
+  const handleReply = (message: Message) => {
+    setReplyToMessage(message);
+    setMessageContextMenu(null);
+    // Focus on the input field
+    setTimeout(() => {
+      const inputElement = document.getElementById('message-input') as HTMLInputElement;
+      if (inputElement) {
+        inputElement.focus();
+      }
+    }, 100);
+  };
+
+  // Toggle emoji picker
+  const toggleEmojiPicker = () => {
+    setShowEmojiSearchInterface(prev => !prev);
+  };
+
+  // Close emoji picker when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(target)) {
+        setShowEmojiSearchInterface(false);
+      }
+    };
+
+    const handleEscapeKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowEmojiSearchInterface(false);
+      }
+    };
+
+    if (showEmojiSearchInterface) {
+      document.addEventListener('mousedown', handleClickOutside, true);
+      document.addEventListener('keydown', handleEscapeKey);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside, true);
+      document.removeEventListener('keydown', handleEscapeKey);
+    };
+  }, [showEmojiSearchInterface]);
 
   const ensureServerHasCategories = (server: Server): Server => {
     if (!server.categories || server.categories.length === 0) {
@@ -326,6 +389,7 @@ const MainPage = () => {
             poll: data.poll,
             deletedForEveryone: data.deletedForEveryone,
             deletedFor: data.deletedFor,
+            replyTo: data.replyTo,
           };
         });
         console.log("Setting messages state:", firestoreMessages.length, "messages");
@@ -756,9 +820,18 @@ const MainPage = () => {
         content: message,
         timestamp: Date.now(),
         conversationId,
+        ...(replyToMessage && {
+          replyTo: {
+            messageId: replyToMessage.id,
+            senderId: replyToMessage.senderId,
+            senderName: replyToMessage.senderName,
+            content: replyToMessage.content,
+          }
+        })
       };
-      
+
       setMessage("");
+      setReplyToMessage(null);
       
       try {
         console.log("💬 Sending message:", newMessage);
@@ -1707,20 +1780,53 @@ const MainPage = () => {
                         }
                       }}
                       onClick={() => handleMessageClick(msg.id)}
-                      className={`rounded-lg cursor-pointer transition-all max-w-xs ${
-                        msg.type === "photo" 
+                      className={`rounded-lg cursor-pointer transition-all max-w-xs relative ${
+                        msg.type === "photo"
                           ? "p-0"
                           : `px-4 py-2 ${
                               isCurrentUser
                                 ? "bg-primary text-primary-foreground"
                                 : "bg-accent/20 text-foreground"
                             }`
-                      }`}
+                      } ${msg.replyTo ? "border-l-4" : ""}`}
+                      style={msg.replyTo ? {
+                        borderLeftColor: isCurrentUser ? "#3b82f6" : "#fb923c"
+                      } : {}}
                     >
-                      {!isCurrentUser && msg.type !== "photo" && msg.type !== "poll" && !msg.deletedForEveryone && (
-                        <p className="text-xs font-semibold mb-1">{msg.senderName}</p>
+                      {msg.type !== "photo" && msg.type !== "poll" && !msg.deletedForEveryone && (
+                        <p className="text-xs font-semibold mb-1" style={{ color: isCurrentUser ? "#3b82f6" : "inherit" }}>
+                          {isCurrentUser ? "You" : msg.senderName}
+                        </p>
                       )}
-                      
+
+                      {/* Reply Preview */}
+                      {msg.replyTo && !msg.deletedForEveryone && (
+                        <div className={`mb-2 p-3 rounded-lg border-l-4 ${
+                          isCurrentUser
+                            ? "bg-blue-50/80 border-blue-400"
+                            : ""
+                        }`}
+                        style={msg.replyTo && !isCurrentUser ? {
+                          backgroundColor: '#fb923c',
+                          borderLeftColor: '#f97316'
+                        } : {}}>
+                          <p className={`text-xs font-medium mb-2 ${
+                            isCurrentUser
+                              ? "text-blue-700"
+                              : "text-black"
+                          }`}>
+                            Replying to {msg.replyTo.senderName}
+                          </p>
+                          <p className={`text-sm leading-relaxed ${
+                            isCurrentUser
+                              ? "text-blue-900"
+                              : "text-black"
+                          }`}>
+                            {msg.replyTo.content}
+                          </p>
+                        </div>
+                      )}
+
                       {msg.deletedForEveryone ? (
                         <p className="italic text-muted-foreground text-sm">This message was deleted by the user</p>
                       ) : (
@@ -1800,6 +1906,55 @@ const MainPage = () => {
         {/* Message Input */}
         {((showDirectMessages && selectedFriend) || (!showDirectMessages && selectedChannel)) && (
           <div className="p-4 border-t border-border bg-card/30 backdrop-blur-sm">
+            {/* Reply Preview */}
+            {replyToMessage && (
+              <div className="mb-2 p-2 bg-accent/30 rounded-lg border border-border/50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Reply className="h-4 w-4" />
+                    <span>Replying to {replyToMessage.senderName}</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 hover:bg-accent/50"
+                    onClick={() => setReplyToMessage(null)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="mt-1 text-sm text-foreground/80 truncate">
+                  {replyToMessage.content}
+                </div>
+              </div>
+            )}
+            {/* Emoji Picker Panel */}
+            {showEmojiSearchInterface && (
+              <div
+                ref={emojiPickerRef}
+                className="absolute bottom-full mb-2 z-50"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div
+                  className="rounded-lg shadow-2xl border overflow-hidden"
+                  style={{
+                    backgroundColor: theme === 'dark' ? '#36393f' : '#ffffff',
+                    borderColor: theme === 'dark' ? '#202225' : '#e1e5e9'
+                  }}
+                >
+                  <Picker
+                    onEmojiClick={handleEmojiSearchSelect}
+                    searchPlaceholder="Search emojis..."
+                    width="320px"
+                    height="380px"
+                    skinTonesDisabled={true}
+                    emojiVersion="1.0"
+                    theme={theme === 'dark' ? 'dark' : 'light' as any}
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-2">
               <input
                 ref={photoInputRef}
@@ -1843,8 +1998,21 @@ const MainPage = () => {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+
+              {/* Emoji Search Button */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleEmojiPicker}
+                className="rounded-full hover:bg-accent transition-colors"
+                title="Search and send emojis"
+              >
+                <Smile className="h-5 w-5" />
+              </Button>
+
               <div className="flex-1 relative">
                 <Input
+                  id="message-input"
                   placeholder={showDirectMessages ? `Message ${selectedFriend?.name}...` : `Message in #${currentChannel?.name}`}
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
@@ -1852,6 +2020,7 @@ const MainPage = () => {
                   className="pr-10"
                 />
               </div>
+
               <Button
                 size="icon"
                 className="rounded-full bg-transparent hover:bg-primary text-primary hover:text-primary-foreground transition-colors"
@@ -2107,6 +2276,18 @@ const MainPage = () => {
         >
           {selectedMessages.size === 0 ? (
             <>
+              <button
+                onClick={() => {
+                  const message = messages.find(m => m.id === messageContextMenu.messageId);
+                  if (message) {
+                    handleReply(message);
+                  }
+                }}
+                className="w-full px-4 py-2 text-sm hover:bg-accent/50 flex items-center gap-2 text-foreground"
+              >
+                <Reply className="h-4 w-4" />
+                Reply
+              </button>
               <button
                 onClick={() => {
                   const message = messages.find(m => m.id === messageContextMenu.messageId);
