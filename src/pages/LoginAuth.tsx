@@ -9,7 +9,7 @@ import {
 } from "firebase/auth";
 import { FirebaseError } from "firebase/app";
 import { auth, db } from "@/lib/firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,6 +48,10 @@ const LoginAuth = () => {
       duration: Math.random() * 3 + 2,
     }));
   }, []);
+
+  const generateUserId = () => {
+    return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`.toUpperCase();
+  };
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,11 +113,35 @@ const LoginAuth = () => {
         throw new Error("Google sign-in failed. Please try again.");
       }
 
-      const profileDoc = await getDoc(doc(db, "users", user.uid));
-      if (!profileDoc.exists()) {
-        await signOut(auth);
-        throw new Error("No account found for this Google ID. Please sign up first.");
+      const trimmedEmail = user.email ? user.email.trim().toLowerCase() : "";
+      const userDocRef = doc(db, "users", user.uid);
+      const userDocSnap = await getDoc(userDocRef);
+      const existingData = userDocSnap.exists() ? userDocSnap.data() : null;
+      const customUserId = existingData?.userId || generateUserId();
+      const fullName = user.displayName?.trim() || existingData?.name || trimmedEmail || "New SoulVoyager";
+
+      const profileData: Record<string, unknown> = {
+        id: user.uid,
+        name: fullName,
+        userId: customUserId,
+        provider: "google",
+        lastLoginAt: Timestamp.now(),
+      };
+
+      if (trimmedEmail) {
+        profileData.email = trimmedEmail;
       }
+
+      if (user.photoURL) {
+        profileData.avatarUrl = user.photoURL;
+      }
+
+      if (!existingData?.createdAt) {
+        profileData.createdAt = Timestamp.now();
+      }
+
+      console.log("LoginAuth - Upserting Google user profile:", user.uid, profileData);
+      await setDoc(userDocRef, profileData, { merge: true });
 
       toast({
         title: "Success",
@@ -267,7 +295,7 @@ const LoginAuth = () => {
           disabled={loading}
         >
           <Chrome className="h-3 md:h-4 lg:h-5 w-3 md:w-4 lg:w-5" />
-          {loading ? "Signing in..." : "Sign In with Google"}
+          {loading ? "Signing in..." : "Continue with Google"}
         </Button>
 
         {/* Sign Up Link */}

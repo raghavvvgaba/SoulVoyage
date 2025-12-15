@@ -6,7 +6,7 @@ import { ServerCreationDialog } from "@/components/ServerCreationDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { UserPlus, Users, Plus, Send, MessageSquare, ChevronDown, UserCheck, Settings, Layers, Copy, FileText, Image, Video, PieChart, Trash2, CheckSquare, X, Globe, Smile, Search, Reply } from "lucide-react";
+import { UserPlus, Users, Plus, Send, MessageSquare, ChevronDown, UserCheck, Settings, Layers, Copy, FileText, Image, Video, PieChart, Trash2, CheckSquare, X, Globe, Smile, Search, Reply, LogOut, MapPin } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -61,6 +61,21 @@ interface Poll {
   createdBy: string;
 }
 
+interface Trip {
+  id: string;
+  name: string;
+  destination: string;
+  timeInterval: string;
+  budget: string;
+  numberOfPeople?: string;
+  placesToVisit: string;
+  categoryId: string;
+  channelId: string;
+  createdBy: string;
+  createdAt: number;
+  members: string[];
+}
+
 interface Message {
   id: string;
   senderId: string;
@@ -72,6 +87,7 @@ interface Message {
   photoUrl?: string;
   poll?: Poll;
   deletedForEveryone?: boolean;
+  tripId?: string;
   deletedFor?: string[];
   replyTo?: {
     messageId: string;
@@ -94,11 +110,15 @@ interface Channel {
   name: string;
   type?: "text" | "voice";
   categoryId?: string;
+  isHidden?: boolean;
+  tripId?: string;
 }
 
 interface Category {
   id: string;
   name: string;
+  isHidden?: boolean;
+  tripId?: string;
 }
 
 const MainPage = () => {
@@ -141,6 +161,19 @@ const MainPage = () => {
   const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
   const [fullscreenPhotoUrl, setFullscreenPhotoUrl] = useState<string | null>(null);
+  const [showLeaveServerDialog, setShowLeaveServerDialog] = useState(false);
+  const [showTransferOwnershipDialog, setShowTransferOwnershipDialog] = useState(false);
+  const [serverMembers, setServerMembers] = useState<any[]>([]);
+  const [selectedNewOwner, setSelectedNewOwner] = useState<string | null>(null);
+  const [isServerOwner, setIsServerOwner] = useState(false);
+  const [showCreateTripDialog, setShowCreateTripDialog] = useState(false);
+  const [showManageTripsDialog, setShowManageTripsDialog] = useState(false);
+  const [tripDestination, setTripDestination] = useState("");
+  const [tripTimeInterval, setTripTimeInterval] = useState("");
+  const [tripBudget, setTripBudget] = useState("");
+  const [tripNumberOfPeople, setTripNumberOfPeople] = useState("");
+  const [tripPlacesToVisit, setTripPlacesToVisit] = useState("");
+  const [trips, setTrips] = useState<Trip[]>([]);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -408,6 +441,34 @@ const MainPage = () => {
     };
   }, [selectedFriend?.id, selectedChannel, showDirectMessages]);
 
+  // Load trips from Firestore for current server
+  useEffect(() => {
+    if (!selectedServer) {
+      setTrips([]);
+      return;
+    }
+
+    try {
+      const tripsRef = collection(db, "trips");
+      const q = query(
+        tripsRef,
+        where("serverId", "==", selectedServer)
+      );
+
+      const unsubscribeTrips = onSnapshot(q, (snapshot) => {
+        const firebaseTrips = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Trip[];
+        setTrips(firebaseTrips);
+      });
+
+      return () => unsubscribeTrips();
+    } catch (error) {
+      console.error("Error loading trips from Firestore:", error);
+    }
+  }, [selectedServer]);
+
   // Load servers from Firestore in real-time (only servers user is a member of)
   useEffect(() => {
     if (!currentProfileId) {
@@ -494,10 +555,22 @@ const MainPage = () => {
     }
   }, [searchParams, toast]);
 
-  const handleServerClick = (serverId: string) => {
+  const handleServerClick = async (serverId: string) => {
     setSelectedServer(serverId);
     setShowDirectMessages(false);
     setSelectedChannel(servers.find(s => s.id === serverId)?.channels?.[0]?.id || null);
+
+    // Check if current user is the server owner
+    try {
+      const serverDoc = await getDoc(doc(db, "servers", serverId));
+      if (serverDoc.exists()) {
+        const serverData = serverDoc.data();
+        setIsServerOwner(serverData.owner === currentProfileId);
+      }
+    } catch (error) {
+      console.error("Error checking server ownership:", error);
+      setIsServerOwner(false);
+    }
   };
 
   const handleCreateServer = async (serverData: { name: string; icon?: string; isPublic?: boolean }) => {
@@ -675,6 +748,7 @@ const MainPage = () => {
 
   const currentServer = servers.find(s => s.id === selectedServer);
   const currentChannel = currentServer?.channels?.find(c => c.id === selectedChannel);
+  const currentChannelTrip = currentChannel?.tripId ? trips.find(t => t.id === currentChannel.tripId) : null;
 
   const generateInviteCode = () => {
     return Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -780,6 +854,529 @@ const MainPage = () => {
   const handleOpenServerSettings = () => {
     if (selectedServer) {
       navigate(`/server/${selectedServer}/settings`);
+    }
+  };
+
+  const handleLeaveServer = async () => {
+    if (!selectedServer || !currentProfileId) return;
+
+    // Fetch server members to check if owner needs to transfer ownership
+    if (isServerOwner) {
+      try {
+        const membersSnapshot = await getDocs(collection(db, `servers/${selectedServer}/members`));
+        const membersList = membersSnapshot.docs
+          .filter(doc => doc.id !== currentProfileId) // Exclude current user
+          .map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+
+        setServerMembers(membersList);
+
+        if (membersList.length > 0) {
+          // Has other members - need to transfer ownership
+          setShowTransferOwnershipDialog(true);
+        } else {
+          // No other members - can leave directly or offer to delete server
+          setShowLeaveServerDialog(true);
+        }
+      } catch (error) {
+        console.error("Error fetching server members:", error);
+        toast({
+          title: "Error",
+          description: "Failed to fetch server members",
+          variant: "destructive",
+        });
+      }
+    } else {
+      // Not owner - can leave directly
+      setShowLeaveServerDialog(true);
+    }
+  };
+
+  const confirmLeaveServer = async () => {
+    if (!selectedServer || !currentProfileId) return;
+
+    try {
+      // Remove user from server members collection
+      await deleteDoc(doc(db, `servers/${selectedServer}/members`, currentProfileId));
+
+      toast({
+        title: "Left Server",
+        description: `You have successfully left ${currentServer?.name}`,
+      });
+
+      // Reset selection to direct messages
+      setSelectedServer(null);
+      setSelectedChannel(null);
+      setShowDirectMessages(true);
+      setShowLeaveServerDialog(false);
+    } catch (error) {
+      console.error("Error leaving server:", error);
+      toast({
+        title: "Error",
+        description: "Failed to leave server",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const transferOwnershipAndLeave = async () => {
+    if (!selectedServer || !currentProfileId || !selectedNewOwner) return;
+
+    try {
+      // Update server ownership
+      await updateDoc(doc(db, "servers", selectedServer), {
+        owner: selectedNewOwner
+      });
+
+      // Update new owner's role
+      await updateDoc(doc(db, `servers/${selectedServer}/members`, selectedNewOwner), {
+        role: "owner"
+      });
+
+      // Remove current owner from server
+      await deleteDoc(doc(db, `servers/${selectedServer}/members`, currentProfileId));
+
+      toast({
+        title: "Ownership Transferred",
+        description: `Server ownership has been transferred and you have left ${currentServer?.name}`,
+      });
+
+      // Reset selection
+      setSelectedServer(null);
+      setSelectedChannel(null);
+      setShowDirectMessages(true);
+      setShowTransferOwnershipDialog(false);
+      setSelectedNewOwner(null);
+    } catch (error) {
+      console.error("Error transferring ownership:", error);
+      toast({
+        title: "Error",
+        description: "Failed to transfer ownership",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const deleteServerAndLeave = async () => {
+    if (!selectedServer || !currentProfileId) return;
+
+    try {
+      // Delete all channels' messages
+      const channels = currentServer?.channels || [];
+      for (const channel of channels) {
+        const messagesRef = collection(db, "conversations", `server_${selectedServer}_channel_${channel.id}`, "messages");
+        const messagesSnapshot = await getDocs(messagesRef);
+        for (const msgDoc of messagesSnapshot.docs) {
+          await deleteDoc(msgDoc.ref);
+        }
+        await deleteDoc(doc(db, "conversations", `server_${selectedServer}_channel_${channel.id}`));
+      }
+
+      // Delete all members
+      const membersSnapshot = await getDocs(collection(db, `servers/${selectedServer}/members`));
+      for (const memberDoc of membersSnapshot.docs) {
+        await deleteDoc(memberDoc.ref);
+      }
+
+      // Delete the server document
+      await deleteDoc(doc(db, "servers", selectedServer));
+
+      toast({
+        title: "Server Deleted",
+        description: `${currentServer?.name} has been deleted successfully`,
+      });
+
+      // Reset selection
+      setSelectedServer(null);
+      setSelectedChannel(null);
+      setShowDirectMessages(true);
+      setShowLeaveServerDialog(false);
+    } catch (error) {
+      console.error("Error deleting server:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete server",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Helper function to check if user can see a channel
+  const canUserSeeChannel = (channel: Channel) => {
+    // Always show non-hidden channels
+    if (!channel.isHidden) return true;
+
+    // Server owners can see all channels
+    if (isServerOwner) return true;
+
+    // Check if user is a member of the trip
+    if (channel.tripId) {
+      const trip = trips.find(t => t.id === channel.tripId);
+      return trip?.members.includes(currentProfileId || "") || trip?.createdBy === currentProfileId;
+    }
+
+    return false;
+  };
+
+  // Helper function to check if user can create channels in a category
+  const canUserCreateChannelInCategory = (category: Category) => {
+    // Server owners can create channels anywhere
+    if (isServerOwner) return true;
+
+    // Check if user created this trip category
+    if (category.tripId) {
+      const trip = trips.find(t => t.id === category.tripId);
+      return trip?.createdBy === currentProfileId;
+    }
+
+    return false;
+  };
+
+  // Helper function to check if user can delete a trip
+  const canUserDeleteTrip = (trip: Trip) => {
+    // Server owners can delete any trip
+    if (isServerOwner) return true;
+
+    // Trip creators can delete their own trips
+    return trip.createdBy === currentProfileId;
+  };
+
+  // Helper function to check if user can see a category
+  const canUserSeeCategory = (category: Category) => {
+    // Always show non-hidden categories
+    if (!category.isHidden) return true;
+
+    // Server owners can see all categories
+    if (isServerOwner) return true;
+
+    // Check if user is a member of the trip
+    if (category.tripId) {
+      const trip = trips.find(t => t.id === category.tripId);
+      return trip?.members.includes(currentProfileId || "") || trip?.createdBy === currentProfileId;
+    }
+
+    return false;
+  };
+
+  const handleCreateTrip = async () => {
+    if (!selectedServer || !currentProfileId) return;
+
+    if (!tripDestination.trim() || !tripTimeInterval.trim() || !tripBudget.trim() || !tripPlacesToVisit.trim()) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const tripId = `trip_${Date.now()}`;
+      const categoryId = `cat_${Date.now()}`;
+      const channelId = `channel_${Date.now()}`;
+      const tripName = `Trip to ${tripDestination}`;
+
+      // Create hidden category
+      const newCategory: Category = {
+        id: categoryId,
+        name: tripName,
+        isHidden: true,
+        tripId,
+      };
+
+      // Create hidden channel
+      const newChannel: Channel = {
+        id: channelId,
+        name: "trip-planning",
+        type: "text",
+        categoryId,
+        isHidden: true,
+        tripId,
+      };
+
+      // Create trip object
+      const newTrip: Trip = {
+        id: tripId,
+        name: tripName,
+        destination: tripDestination,
+        timeInterval: tripTimeInterval,
+        budget: tripBudget,
+        numberOfPeople: tripNumberOfPeople || undefined,
+        placesToVisit: tripPlacesToVisit,
+        categoryId,
+        channelId,
+        createdBy: currentProfileId,
+        createdAt: Date.now(),
+        members: [currentProfileId],
+      };
+
+      // Get current server data
+      const serverRef = doc(db, "servers", selectedServer);
+      const serverDoc = await getDoc(serverRef);
+
+      if (serverDoc.exists()) {
+        const currentCategories = serverDoc.data().categories || [];
+        const currentChannels = serverDoc.data().channels || [];
+
+        // Update server with new category and channel
+        await updateDoc(serverRef, {
+          categories: [...currentCategories, newCategory],
+          channels: [...currentChannels, newChannel],
+        });
+
+        // Save trip data to a separate collection
+        await setDoc(doc(db, "trips", tripId), {
+          ...newTrip,
+          serverId: selectedServer,
+        });
+
+        // Reset form
+        setTripDestination("");
+        setTripTimeInterval("");
+        setTripBudget("");
+        setTripNumberOfPeople("");
+        setTripPlacesToVisit("");
+        setShowCreateTripDialog(false);
+
+        toast({
+          title: "Trip Created",
+          description: `${tripName} has been created successfully!`,
+        });
+
+        // Send messages with a small delay to ensure Firestore listeners have updated
+        setTimeout(async () => {
+          // Send detailed trip info to the trip channel
+          await sendTripInfoToChannel(newTrip);
+          // Send announcement to general channel with join button
+          await sendTripAnnouncement(tripName, tripId, tripDestination);
+          // Auto-select the trip planning channel for the creator
+          setSelectedChannel(channelId);
+        }, 500);
+      }
+    } catch (error) {
+      console.error("Error creating trip:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create trip",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Function to send trip info to the trip channel
+  const sendTripInfoToChannel = async (trip: Trip) => {
+    if (!selectedServer || !currentProfileId) return;
+
+    try {
+      const conversationId = `server_${selectedServer}_channel_${trip.channelId}`;
+
+      // Create detailed trip info message
+      const tripInfoMessage: Message = {
+        id: `msg_${Date.now()}`,
+        conversationId,
+        senderId: currentProfileId,
+        senderName: currentProfile?.name || "Unknown",
+        content: `## 🌟 ${trip.name} 🌟\n\n**Destination:** ${trip.destination}\n**Duration:** ${trip.timeInterval}\n**Budget:** ${trip.budget}\n${trip.numberOfPeople ? `**Group Size:** ${trip.numberOfPeople}\n` : ''}**Places to Visit:** ${trip.placesToVisit}\n\n**Created by:** ${trip.createdBy === currentProfileId ? 'You' : 'Trip Creator'}\n\nThis is your private trip planning channel. Start discussing your travel plans here!`,
+        timestamp: Date.now(),
+        type: "text",
+      };
+
+      // Save the trip info message
+      await setDoc(doc(db, "conversations", conversationId), {
+        id: conversationId,
+        type: "server_channel",
+        serverId: selectedServer,
+        channelId: trip.channelId,
+        createdAt: Date.now(),
+      });
+
+      await setDoc(doc(db, "conversations", conversationId, "messages", tripInfoMessage.id), tripInfoMessage);
+    } catch (error) {
+      console.error("Error sending trip info to channel:", error);
+    }
+  };
+
+  // Function to send trip announcement to general channel
+  const sendTripAnnouncement = async (tripName: string, tripId: string, destination: string) => {
+    if (!selectedServer || !currentProfileId) return;
+
+    try {
+      // Get the latest server data from Firestore
+      const serverRef = doc(db, "servers", selectedServer);
+      const serverDoc = await getDoc(serverRef);
+
+      if (!serverDoc.exists()) return;
+
+      const serverData = serverDoc.data();
+      // Find the general channel (first non-hidden channel)
+      const generalChannel = serverData.channels?.find((c: any) => !c.isHidden);
+      if (!generalChannel) return;
+
+      const conversationId = `server_${selectedServer}_channel_${generalChannel.id}`;
+
+      // Create announcement message
+      const announcementMessage: Message = {
+        id: `msg_${Date.now()}`,
+        conversationId,
+        senderId: currentProfileId,
+        senderName: currentProfile?.name || "Unknown",
+        content: `🎉 New trip created: **${tripName}** to ${destination}!\n\nClick the button below to join this amazing adventure!`,
+        timestamp: Date.now(),
+        type: "text",
+        tripId: tripId, // Add tripId to identify this message
+      };
+
+      // Save the announcement message
+      await setDoc(doc(db, "conversations", conversationId), {
+        id: conversationId,
+        type: "server_channel",
+        serverId: selectedServer,
+        channelId: generalChannel.id,
+        createdAt: Date.now(),
+      });
+
+      await setDoc(doc(db, "conversations", conversationId, "messages", announcementMessage.id), announcementMessage);
+    } catch (error) {
+      console.error("Error sending trip announcement:", error);
+    }
+  };
+
+  // Function to handle joining a trip
+  const handleJoinTrip = async (tripId: string) => {
+    if (!currentProfileId) return;
+
+    try {
+      const tripRef = doc(db, "trips", tripId);
+      const tripDoc = await getDoc(tripRef);
+
+      if (!tripDoc.exists()) {
+        toast({
+          title: "Error",
+          description: "Trip not found",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const tripData = tripDoc.data() as Trip;
+
+      // Check if user is already a member
+      if (tripData.members.includes(currentProfileId)) {
+        toast({
+          title: "Already Joined",
+          description: "You are already a member of this trip",
+        });
+        return;
+      }
+
+      // Add user to trip members
+      await updateDoc(tripRef, {
+        members: [...tripData.members, currentProfileId],
+      });
+
+      toast({
+        title: "Success",
+        description: `You have joined ${tripData.name}!`,
+      });
+
+      // Refresh trips to get updated data
+      // The real-time listener will handle this automatically
+    } catch (error) {
+      console.error("Error joining trip:", error);
+      toast({
+        title: "Error",
+        description: "Failed to join trip",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Function to handle deleting a trip
+  const handleDeleteTrip = async (tripId: string) => {
+    if (!currentProfileId || !selectedServer) return;
+
+    // Get trip details before deletion for cleanup
+    const tripRef = doc(db, "trips", tripId);
+    const tripDoc = await getDoc(tripRef);
+
+    if (!tripDoc.exists()) {
+      toast({
+        title: "Error",
+        description: "Trip not found",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const tripData = tripDoc.data() as Trip;
+
+    // Check if user can delete this trip
+    if (!canUserDeleteTrip(tripData)) {
+      toast({
+        title: "Access Denied",
+        description: "You don't have permission to delete this trip",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Confirm deletion
+    const confirmed = window.confirm(`Are you sure you want to delete "${tripData.name}"? This action cannot be undone and will remove all trip data including the planning channel.`);
+
+    if (!confirmed) return;
+
+    try {
+      // Delete all messages in the trip channel
+      const conversationId = `server_${selectedServer}_channel_${tripData.channelId}`;
+      const messagesRef = collection(db, "conversations", conversationId, "messages");
+      const messagesSnapshot = await getDocs(messagesRef);
+
+      for (const msgDoc of messagesSnapshot.docs) {
+        await deleteDoc(msgDoc.ref);
+      }
+
+      // Delete the conversation collection
+      await deleteDoc(doc(db, "conversations", conversationId));
+
+      // Remove the category and channel from the server
+      const serverRef = doc(db, "servers", selectedServer);
+      const serverDoc = await getDoc(serverRef);
+
+      if (serverDoc.exists()) {
+        const serverData = serverDoc.data();
+        const updatedCategories = (serverData.categories || []).filter((c: Category) => c.id !== tripData.categoryId);
+        const updatedChannels = (serverData.channels || []).filter((c: Channel) => c.id !== tripData.channelId);
+
+        await updateDoc(serverRef, {
+          categories: updatedCategories,
+          channels: updatedChannels,
+        });
+      }
+
+      // Delete the trip document
+      await deleteDoc(tripRef);
+
+      toast({
+        title: "Trip Deleted",
+        description: `${tripData.name} has been deleted successfully`,
+      });
+
+      // If we were in the deleted channel, switch to general channel
+      if (selectedChannel === tripData.channelId) {
+        const generalChannel = currentServer?.channels?.find(c => !c.isHidden);
+        if (generalChannel) {
+          setSelectedChannel(generalChannel.id);
+        }
+      }
+    } catch (error) {
+      console.error("Error deleting trip:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete trip",
+        variant: "destructive",
+      });
     }
   };
 
@@ -1520,19 +2117,39 @@ const MainPage = () => {
                 <UserCheck className="h-4 w-4" />
                 <span>Invite People</span>
               </DropdownMenuItem>
+              {(isServerOwner || trips.some(t => t.createdBy === currentProfileId)) && (
+                <DropdownMenuItem
+                  className="gap-2 cursor-pointer"
+                  onClick={() => setShowManageTripsDialog(true)}
+                >
+                  <MapPin className="h-4 w-4" />
+                  <span>Manage Trips</span>
+                </DropdownMenuItem>
+              )}
+              {isServerOwner && (
+                <>
+                  <DropdownMenuItem
+                    className="gap-2 cursor-pointer"
+                    onClick={handleOpenServerSettings}
+                  >
+                    <Settings className="h-4 w-4" />
+                    <span>Server Settings</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="gap-2 cursor-pointer"
+                    onClick={() => setIsCreatingCategory(true)}
+                  >
+                    <Layers className="h-4 w-4" />
+                    <span>Create Category</span>
+                  </DropdownMenuItem>
+                </>
+              )}
               <DropdownMenuItem
-                className="gap-2 cursor-pointer"
-                onClick={handleOpenServerSettings}
+                className="gap-2 cursor-pointer text-red-500 focus:text-red-600 focus:bg-red-50/50"
+                onClick={handleLeaveServer}
               >
-                <Settings className="h-4 w-4" />
-                <span>Server Settings</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="gap-2 cursor-pointer"
-                onClick={() => setIsCreatingCategory(true)}
-              >
-                <Layers className="h-4 w-4" />
-                <span>Create Category</span>
+                <LogOut className="h-4 w-4" />
+                <span>Leave Server</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -1596,23 +2213,26 @@ const MainPage = () => {
           <>
             {/* Categories Section */}
             <div className="flex-1 overflow-y-auto p-2 space-y-1">
-              {currentServer?.categories?.map((category) => (
+              {/* Regular Categories */}
+              {currentServer?.categories?.filter(c => !c.isHidden).map((category) => (
                 <div key={category.id} className="space-y-1">
                   <div className="flex items-center justify-between px-2 py-1">
                     <span className="text-xs font-semibold text-muted-foreground">{category.name}</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-5 w-5"
-                      onClick={() => {
-                        setSelectedCategoryId(category.id);
-                        setShowCreateChannelDialog(true);
-                      }}
-                    >
-                      <Plus className="h-3 w-3" />
-                    </Button>
+                    {canUserCreateChannelInCategory(category) && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
+                        onClick={() => {
+                          setSelectedCategoryId(category.id);
+                          setShowCreateChannelDialog(true);
+                        }}
+                      >
+                        <Plus className="h-3 w-3" />
+                      </Button>
+                    )}
                   </div>
-                  {currentServer?.channels?.filter(c => c.categoryId === category.id).map((channel) => (
+                  {currentServer?.channels?.filter(c => c.categoryId === category.id && canUserSeeChannel(c)).map((channel) => (
                     <Button
                       key={channel.id}
                       variant="ghost"
@@ -1631,6 +2251,52 @@ const MainPage = () => {
                 </div>
               ))}
 
+              {/* Trip Categories - Visible to trip members and creators */}
+              {currentServer?.categories?.filter(c => c.isHidden && c.tripId && canUserSeeCategory(c)).length > 0 && (
+                <div className="mt-4 pt-2 border-t border-border">
+                  <div className="flex items-center justify-between px-2 py-1">
+                    <span className="text-xs font-semibold text-muted-foreground">Your Trips</span>
+                  </div>
+                  {currentServer?.categories?.filter(c => c.isHidden && c.tripId && canUserSeeCategory(c)).map((category) => (
+                    <div key={category.id} className="space-y-1">
+                      <div className="flex items-center justify-between px-2 py-1">
+                        <span className="text-xs font-semibold text-blue-600">{category.name}</span>
+                        {canUserCreateChannelInCategory(category) && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5"
+                            onClick={() => {
+                              setSelectedCategoryId(category.id);
+                              setShowCreateChannelDialog(true);
+                            }}
+                          >
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                      {currentServer?.channels?.filter(c => c.categoryId === category.id && canUserSeeChannel(c)).map((channel) => (
+                        <Button
+                          key={channel.id}
+                          variant="ghost"
+                          onClick={() => handleChannelClick(channel.id)}
+                          className={`w-full justify-start gap-3 ml-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50/50 ${
+                            selectedChannel === channel.id
+                              ? "bg-blue-50 hover:bg-blue-50"
+                              : ""
+                          }`}
+                        >
+                          <span className="text-sm">
+                            {channel.type === "voice" ? "🎙" : "#"} {channel.name}
+                          </span>
+                        </Button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+  
               {/* New Category Input */}
               {isCreatingCategory && (
                 <div className="px-2 py-1">
@@ -1712,7 +2378,20 @@ const MainPage = () => {
                         )
                       ) : (
                         <>
-                          <h1 className="text-4xl font-bold mb-2">Welcome to #{currentChannel?.name}</h1>
+                          <div className="flex items-center justify-between">
+                            <h1 className="text-4xl font-bold mb-2">Welcome to #{currentChannel?.name}</h1>
+                            {currentChannelTrip && canUserDeleteTrip(currentChannelTrip) && (
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => handleDeleteTrip(currentChannelTrip!.id)}
+                                className="mb-2"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete Trip
+                              </Button>
+                            )}
+                          </div>
                           <p className="text-muted-foreground">
                             Start a conversation in this channel.
                           </p>
@@ -1803,23 +2482,23 @@ const MainPage = () => {
                       {msg.replyTo && !msg.deletedForEveryone && (
                         <div className={`mb-2 p-3 rounded-lg border-l-4 ${
                           isCurrentUser
-                            ? "bg-blue-50/80 border-blue-400"
+                            ? ""
                             : ""
                         }`}
-                        style={msg.replyTo && !isCurrentUser ? {
-                          backgroundColor: '#fb923c',
-                          borderLeftColor: '#f97316'
+                        style={msg.replyTo ? {
+                          backgroundColor: isCurrentUser ? '#a8f5e9' : '#fb923c',
+                          borderLeftColor: isCurrentUser ? '#1e40af' : '#f97316'
                         } : {}}>
                           <p className={`text-xs font-medium mb-2 ${
                             isCurrentUser
-                              ? "text-blue-700"
+                              ? "text-blue-900"
                               : "text-black"
                           }`}>
                             Replying to {msg.replyTo.senderName}
                           </p>
                           <p className={`text-sm leading-relaxed ${
                             isCurrentUser
-                              ? "text-blue-900"
+                              ? "text-blue-800"
                               : "text-black"
                           }`}>
                             {msg.replyTo.content}
@@ -1890,7 +2569,21 @@ const MainPage = () => {
                           )}
                           
                           {msg.type !== "photo" && msg.type !== "poll" && (
-                            <p className="break-words">{msg.content}</p>
+                            <>
+                              <p className="break-words">{msg.content}</p>
+                              {/* Show join button for trip announcements */}
+                              {msg.tripId && (
+                                <div className="mt-3 pt-3 border-t border-current/20">
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleJoinTrip(msg.tripId!)}
+                                    className="bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30"
+                                  >
+                                    Join Trip
+                                  </Button>
+                                </div>
+                              )}
+                            </>
                           )}
                         </>
                       )}
@@ -1978,7 +2671,7 @@ const MainPage = () => {
                     <FileText className="h-4 w-4" />
                     <span>Files</span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem 
+                  <DropdownMenuItem
                     className="gap-2 cursor-pointer"
                     onClick={() => photoInputRef.current?.click()}
                   >
@@ -1989,13 +2682,22 @@ const MainPage = () => {
                     <Video className="h-4 w-4" />
                     <span>Videos</span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem 
+                  <DropdownMenuItem
                     className="gap-2 cursor-pointer"
                     onClick={() => setShowPollDialog(true)}
                   >
                     <PieChart className="h-4 w-4" />
                     <span>Poll</span>
                   </DropdownMenuItem>
+                  {!showDirectMessages && selectedServer && (
+                    <DropdownMenuItem
+                      className="gap-2 cursor-pointer"
+                      onClick={() => setShowCreateTripDialog(true)}
+                    >
+                      <MapPin className="h-4 w-4" />
+                      <span>Add a Trip</span>
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
 
@@ -2491,9 +3193,252 @@ const MainPage = () => {
         </div>
       )}
 
+      {/* Leave Server Confirmation Dialog */}
+      <Dialog open={showLeaveServerDialog} onOpenChange={setShowLeaveServerDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{isServerOwner && serverMembers.length === 0 ? "Delete Server" : "Leave Server"}</DialogTitle>
+            <DialogDescription>
+              {isServerOwner && serverMembers.length === 0
+                ? `You are the only member of ${currentServer?.name}. You can either delete the server or leave it (it will remain without an owner).`
+                : `Are you sure you want to leave ${currentServer?.name}? You'll lose access to all channels in this server.`
+              }
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {isServerOwner && serverMembers.length === 0 ? (
+              <>
+                <Button
+                  onClick={deleteServerAndLeave}
+                  variant="destructive"
+                  className="w-full"
+                >
+                  Delete Server
+                </Button>
+                <Button
+                  onClick={confirmLeaveServer}
+                  variant="secondary"
+                  className="w-full"
+                >
+                  Leave Without Deleting
+                </Button>
+              </>
+            ) : (
+              <Button
+                onClick={confirmLeaveServer}
+                variant="destructive"
+                className="w-full"
+              >
+                Leave Server
+              </Button>
+            )}
+            <Button
+              onClick={() => setShowLeaveServerDialog(false)}
+              variant="outline"
+              className="w-full"
+            >
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Transfer Ownership Dialog */}
+      <Dialog open={showTransferOwnershipDialog} onOpenChange={setShowTransferOwnershipDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Transfer Ownership</DialogTitle>
+            <DialogDescription>
+              You are the owner of {currentServer?.name}. Before leaving, you must transfer ownership to another member.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Select New Owner</Label>
+              <div className="max-h-40 overflow-y-auto space-y-1">
+                {serverMembers.map((member) => (
+                  <div
+                    key={member.id}
+                    className={`p-2 rounded cursor-pointer transition-colors ${
+                      selectedNewOwner === member.id
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-accent"
+                    }`}
+                    onClick={() => setSelectedNewOwner(member.id)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-6 w-6">
+                        <AvatarFallback className="text-xs">
+                          {getInitials(member.name || "User")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="text-sm">{member.name || "Unknown User"}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <Button
+              onClick={transferOwnershipAndLeave}
+              disabled={!selectedNewOwner}
+              variant="destructive"
+              className="w-full"
+            >
+              Transfer Ownership and Leave
+            </Button>
+            <Button
+              onClick={() => {
+                setShowTransferOwnershipDialog(false);
+                setSelectedNewOwner(null);
+              }}
+              variant="outline"
+              className="w-full"
+            >
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Trip Dialog */}
+      <Dialog open={showCreateTripDialog} onOpenChange={setShowCreateTripDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create a Trip</DialogTitle>
+            <DialogDescription>
+              Create a hidden channel for trip planning. Only trip members will be able to see this channel.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="destination">Destination *</Label>
+              <Input
+                id="destination"
+                placeholder="e.g., Paris, Bali, New York"
+                value={tripDestination}
+                onChange={(e) => setTripDestination(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="time-interval">Time Interval *</Label>
+              <Input
+                id="time-interval"
+                placeholder="e.g., Dec 25-30, 2024"
+                value={tripTimeInterval}
+                onChange={(e) => setTripTimeInterval(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="budget">Budget *</Label>
+              <Input
+                id="budget"
+                placeholder="e.g., $5000"
+                value={tripBudget}
+                onChange={(e) => setTripBudget(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="number-of-people">Number of People (Optional)</Label>
+              <Input
+                id="number-of-people"
+                placeholder="e.g., 4 people"
+                value={tripNumberOfPeople}
+                onChange={(e) => setTripNumberOfPeople(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="places-to-visit">Places to Visit *</Label>
+              <textarea
+                id="places-to-visit"
+                className="w-full min-h-[80px] px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 border rounded-md resize-none"
+                placeholder="List the places you want to visit..."
+                value={tripPlacesToVisit}
+                onChange={(e) => setTripPlacesToVisit(e.target.value)}
+              />
+            </div>
+            <Button onClick={handleCreateTrip} className="w-full">
+              Create Trip
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage Trips Dialog */}
+      <Dialog open={showManageTripsDialog} onOpenChange={setShowManageTripsDialog}>
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Manage Trips</DialogTitle>
+            <DialogDescription>
+              View and manage all trips in this server
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {trips.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">No trips created yet</p>
+            ) : (
+              trips.map((trip) => {
+                const isCreator = trip.createdBy === currentProfileId;
+                const canDelete = isServerOwner || isCreator;
+
+                return (
+                  <div key={trip.id} className="border rounded-lg p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold text-lg">{trip.name}</h3>
+                      {canDelete && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDeleteTrip(trip.id)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete Trip
+                        </Button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <span className="font-medium">Destination:</span> {trip.destination}
+                      </div>
+                      <div>
+                        <span className="font-medium">Duration:</span> {trip.timeInterval}
+                      </div>
+                      <div>
+                        <span className="font-medium">Budget:</span> {trip.budget}
+                      </div>
+                      <div>
+                        <span className="font-medium">Members:</span> {trip.members.length}
+                      </div>
+                    </div>
+                    <div className="text-sm">
+                      <span className="font-medium">Places to Visit:</span>
+                      <p className="mt-1">{trip.placesToVisit}</p>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Created by: {isCreator ? 'You' : trip.createdBy}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedChannel(trip.channelId);
+                        setShowManageTripsDialog(false);
+                      }}
+                      className="mt-2"
+                    >
+                      View Trip Channel
+                    </Button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
 
     </div>
   );
 };
+
 
 export default MainPage;
