@@ -385,7 +385,7 @@ const MainPage = () => {
   // Load messages from Firestore for current conversation
   useEffect(() => {
     let conversationId = "";
-    
+
     if (showDirectMessages && selectedFriend) {
       // Direct message: dm_{uid1}_{uid2}
       conversationId = `dm_${getConversationId(selectedFriend.id)}`;
@@ -393,7 +393,7 @@ const MainPage = () => {
       // Server channel message: server_{serverId}_channel_{channelId}
       conversationId = `server_${selectedServer}_channel_${selectedChannel}`;
     }
-    
+
         if (!conversationId) {
       if (unsubscribeRef.current) {
         unsubscribeRef.current();
@@ -403,34 +403,58 @@ const MainPage = () => {
       return;
     }
 
-    try {
-      const messagesRef = collection(db, "conversations", conversationId, "messages");
-      const q = query(messagesRef, orderBy("timestamp", "asc"));
+    const setupConversationListener = async () => {
+      try {
+        // First, ensure the conversation document exists
+        const conversationRef = doc(db, "conversations", conversationId);
+        const conversationDoc = await getDoc(conversationRef);
 
-      unsubscribeRef.current = onSnapshot(q, (snapshot) => {
-        const firestoreMessages = snapshot.docs.map((doc) => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            senderId: data.senderId,
-            senderName: data.senderName,
-            content: data.content,
-            timestamp: data.timestamp,
-            conversationId: data.conversationId,
-            type: data.type,
-            photoUrl: data.photoUrl,
-            poll: data.poll,
-            deletedForEveryone: data.deletedForEveryone,
-            deletedFor: data.deletedFor,
-            replyTo: data.replyTo,
-          };
+        if (!conversationDoc.exists()) {
+          // Create the conversation document if it doesn't exist
+          await setDoc(conversationRef, {
+            id: conversationId,
+            type: showDirectMessages ? "direct_message" : "server_channel",
+            serverId: showDirectMessages ? null : selectedServer,
+            channelId: showDirectMessages ? null : selectedChannel,
+            participants: showDirectMessages ? [currentProfileId, selectedFriend?.id] : null,
+            createdAt: Date.now(),
+          });
+        }
+
+        // Now set up the messages listener
+        const messagesRef = collection(db, "conversations", conversationId, "messages");
+        const q = query(messagesRef, orderBy("timestamp", "asc"));
+
+        unsubscribeRef.current = onSnapshot(q, (snapshot) => {
+          const firestoreMessages = snapshot.docs.map((doc) => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              senderId: data.senderId,
+              senderName: data.senderName,
+              content: data.content,
+              timestamp: data.timestamp,
+              conversationId: data.conversationId,
+              type: data.type,
+              photoUrl: data.photoUrl,
+              poll: data.poll,
+              deletedForEveryone: data.deletedForEveryone,
+              deletedFor: data.deletedFor,
+              replyTo: data.replyTo,
+              tripId: data.tripId,
+            };
+          });
+          console.log("Setting messages state:", firestoreMessages.length, "messages for", conversationId);
+          setMessages(firestoreMessages);
+        }, (error) => {
+          console.error("Error in messages listener:", error);
         });
-        console.log("Setting messages state:", firestoreMessages.length, "messages");
-        setMessages(firestoreMessages);
-      });
-    } catch (error) {
-      console.error("Error setting up Firestore listener:", error);
-    }
+      } catch (error) {
+        console.error("Error setting up Firestore listener:", error);
+      }
+    };
+
+    setupConversationListener();
 
     return () => {
       console.log("Cleaning up messages listener");
@@ -439,7 +463,7 @@ const MainPage = () => {
         unsubscribeRef.current = null;
       }
     };
-  }, [selectedFriend?.id, selectedChannel, showDirectMessages]);
+  }, [selectedFriend?.id, selectedChannel, showDirectMessages, selectedServer, currentProfileId]);
 
   // Load trips from Firestore for current server
   useEffect(() => {
